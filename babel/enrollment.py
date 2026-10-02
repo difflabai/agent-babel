@@ -44,8 +44,8 @@ def change(config, action, **args):
         if owner not in result["owners"] or client not in CLIENTS: raise BridgeError("Configure owner and supported client label first")
         pid=owner+"."+client+"."+session
         if pid in result["participants"]: raise BridgeError("Instance already exists; use a fresh session ID")
-        expires=args["expires"]; now=int(time.time())
-        if type(expires) is not int or not now<expires<=now+lifetime_limit(client):
+        expires=args.get("expires"); now=int(time.time())
+        if expires is not None and (type(expires) is not int or not now<expires<=now+lifetime_limit(client)):
             raise BridgeError("Invitation expiry must be future and within the client lifetime limit")
         result["participants"][pid]={"owner":owner,"client":client,"session":session,"state":"invited",
                                     "accepted":False,"expires":expires,"activated_at":0}
@@ -55,6 +55,13 @@ def change(config, action, **args):
         if not entry or entry["state"]!="invited" or not now<expires<=now+lifetime_limit(entry["client"]):
             raise BridgeError("Only a pending invitation may receive a new bounded expiry")
         entry["expires"]=expires
+    elif action=="persistent":
+        entry=result["participants"].get(args["participant"])
+        if (not entry or entry["state"] not in ("invited","active")
+                or (entry["state"]=="active" and entry["expires"] is not None
+                    and entry["expires"]<=time.time())):
+            raise BridgeError("Only a pending or currently active participant can become persistent")
+        entry["expires"]=None
     elif action=="activate":
         entry=result["participants"].get(args["participant"])
         if not entry or entry["state"]!="invited" or not args.get("accepted"):
@@ -135,8 +142,10 @@ def add_parser(modes):
     owner=actions.add_parser("owner"); owner.add_argument("--owner",required=True)
     invite=actions.add_parser("invite")
     for name in ("owner","session"): invite.add_argument("--"+name,required=True)
-    invite.add_argument("--client",required=True,choices=CLIENTS); invite.add_argument("--expires",required=True,type=int)
+    invite.add_argument("--client",required=True,choices=CLIENTS)
+    invite.add_argument("--expires",type=int,help="Optional finite expiry; omitted means persistent until closed or revoked")
     expiry=actions.add_parser("expiry"); expiry.add_argument("--participant",required=True); expiry.add_argument("--expires",required=True,type=int)
+    actions.add_parser("persistent").add_argument("--participant",required=True)
     activate=actions.add_parser("activate"); activate.add_argument("--participant",required=True)
     activate.add_argument("--accepted",action="store_true",required=True); activate.add_argument("--sha256")
     for name in ("close","revoke"):

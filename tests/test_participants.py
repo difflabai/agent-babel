@@ -130,6 +130,37 @@ class ParticipantTests(unittest.TestCase):
         self.replace_policy(cfg)
         with self.assertRaises(BridgeError):self.policy.authenticate("Bearer "+TOKENS[GUEST])
         with self.assertRaises(BridgeError):self.replace_policy(self.cfg)
+    def test_persistent_participants_stay_connected_and_still_revoke(self):
+        from unittest.mock import patch
+        cfg=copy.deepcopy(self.cfg)
+        for entry in cfg["participants"].values(): entry["expires"]=None
+        self.replace_policy(cfg)
+        with patch("time.time",return_value=time.time()+10*365*86400):
+            self.store.sync_policy(self.policy)
+            self.assertEqual(self.policy.authenticate("Bearer "+TOKENS[DOT]),DOT)
+            self.assertEqual(self.scoped(DOT).contacts(DOT),[{"recipient":GUEST,"conversation_id":"chat_shared_01"}])
+        cfg["participants"][GUEST]["state"]="revoked";self.replace_policy(cfg)
+        with self.assertRaises(BridgeError):self.policy.authenticate("Bearer "+TOKENS[GUEST])
+        cfg["participants"][GUEST]["state"]="active"
+        with self.assertRaises(BridgeError):self.replace_policy(cfg)
+
+    def test_persistent_recipient_wake_renews_beyond_old_participant_limit(self):
+        from unittest.mock import patch
+        cfg=copy.deepcopy(self.cfg)
+        for entry in cfg["participants"].values(): entry["expires"]=None
+        self.replace_policy(cfg)
+        transport=FakeTransport()
+        params={"name":EVENT_NAME,"arguments":{"recipient":GUEST},
+                "delivery":{"mode":"webhook","url":"https://guest.example.com/callback","secret":KEY}}
+        service=EventService(self.store,self.policy,wake(),transport)
+        first=service.subscribe(GUEST,params)
+        future=time.time()+40*86400
+        with patch("time.time",return_value=future):
+            renewed=service.subscribe(GUEST,params)
+            self.assertEqual(first["id"],renewed["id"])
+            row=self.stage(mid="persistent-future-wake-001")
+            self.assertTrue(service.process_one())
+            self.assertEqual(self.store.db.execute("SELECT status FROM outbox WHERE message_id=?",(row["id"],)).fetchone()[0],"accepted")
     def test_credential_rotation_rejects_old_and_reused_credentials(self):
         cfg=copy.deepcopy(self.cfg)
         fresh="public-synthetic-rotated-credential-000000"
@@ -235,6 +266,30 @@ class ParticipantTests(unittest.TestCase):
         self.assertEqual(self.store.message_status(row["id"],CODEX)["status"],"queued")
 
 class EnrollmentTests(unittest.TestCase):
+    def test_persistent_enrollment_is_default_and_can_convert_live_instances(self):
+        from unittest.mock import patch
+        for client in ("dots","grokbot","codex","cursor","claude","opencode"):
+            cfg=change(fixture(),"invite",owner="owner_a",client=client,session="persistent_01")
+            pid="owner_a."+client+".persistent_01"
+            self.assertIsNone(cfg["participants"][pid]["expires"])
+            cfg=change(cfg,"activate",participant=pid,accepted=True,
+                       sha256=hashlib.sha256(("persistent-synthetic-"+client).encode()).hexdigest())
+            with patch("time.time",return_value=time.time()+365*86400):Policy(cfg).assert_active(pid)
+        original=fixture();cfg=change(original,"persistent",participant=DOT)
+        self.assertIsNone(cfg["participants"][DOT]["expires"])
+        self.assertEqual(cfg["participants"][DOT]["activated_at"],original["participants"][DOT]["activated_at"])
+
+    def test_persistence_cannot_reopen_expired_closed_or_unaccepted_instances(self):
+        for state in ("closed","revoked"):
+            cfg=fixture();cfg["participants"][DOT]["state"]=state
+            with self.assertRaises(BridgeError):change(cfg,"persistent",participant=DOT)
+        cfg=fixture();cfg["participants"][DOT]["expires"]=int(time.time())-1
+        with self.assertRaises(BridgeError):change(cfg,"persistent",participant=DOT)
+        cfg=fixture();cfg["participants"][DOT].update(expires=None,accepted=False)
+        with self.assertRaises(BridgeError):Policy(cfg)
+        cfg=fixture();cfg["participants"][DOT]["expires"]=True
+        with self.assertRaises(BridgeError):Policy(cfg)
+
     def test_claude_and_opencode_have_distinct_bounded_interactive_instances(self):
         from babel.core import agent
         for client in ("claude", "opencode"):

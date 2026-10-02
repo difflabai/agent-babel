@@ -91,7 +91,8 @@ class Policy:
         if self.multi_owner:
             entry=self.participants[role]; now=time.time()
             if (entry["state"]!="active" or not entry["accepted"] or not self.owners[entry["owner"]]["enabled"]
-                    or not entry["activated_at"]<=now<entry["expires"]):
+                    or now<entry["activated_at"]
+                    or (entry["expires"] is not None and now>=entry["expires"])):
                 raise BridgeError("Participant access is unavailable",403)
 
     def assert_route(self, conversation, source, recipient):

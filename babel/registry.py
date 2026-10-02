@@ -22,7 +22,7 @@ def synchronize(store, policy):
             if old and tuple(old[k] for k in ("owner","client","session"))!=binding:
                 raise BridgeError("Participant IDs cannot be reassigned")
             state=entry["state"]
-            if state=="active" and entry["expires"]<=now: state="closed"
+            if state=="active" and entry["expires"] is not None and entry["expires"]<=now: state="closed"
             if old:
                 if old["state"] in ("closed","revoked") and state not in ("closed","revoked"):
                     raise BridgeError("Closed or revoked participant IDs cannot be reused")

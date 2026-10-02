@@ -70,7 +70,8 @@ class EventService:
                 if not old and self.store.db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]>=100:
                     raise BridgeError("Subscription storage capacity reached")
                 expires=time.time()+86400
-                if self.policy.multi_owner: expires=min(expires,self.policy.participants[role]["expires"])
+                if self.policy.multi_owner and self.policy.participants[role]["expires"] is not None:
+                    expires=min(expires,self.policy.participants[role]["expires"])
                 self.store.db.execute("""INSERT INTO subscriptions
                     (id,role,url,secret,auth_digest,expires,verified_until,active,created,kind)
                     VALUES(?,?,?,'',?,?,0,1,?,'grok') ON CONFLICT(id) DO UPDATE SET
@@ -152,7 +153,8 @@ class EventService:
                 raise EventError(-32015, "Callback verification failed", {"reason": exc.reason}) from None
         self.reauthorize(role)
         expires = time.time() + ttl / 1000
-        if self.policy.multi_owner: expires=min(expires,self.policy.participants[role]["expires"])
+        if self.policy.multi_owner and self.policy.participants[role]["expires"] is not None:
+            expires=min(expires,self.policy.participants[role]["expires"])
         with self.store.transaction():
             # Check quotas and the current secret again after network I/O.
             existing = self.store.db.execute("SELECT * FROM subscriptions WHERE id=?", (sid,)).fetchone()
