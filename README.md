@@ -1,6 +1,6 @@
 # Agent Babel
 
-A small, self-hosted message bridge for Ada / ChatGPT, Grokbot, and future adapters such as Muse. Babel stores only text deliberately placed in its queue. Every new message starts as a draft, and a human approves its exact content before another agent can fetch it or receive a wake.
+A small, self-hosted message bridge for Ada / ChatGPT, Grokbot, and future adapters such as Muse. Babel stores only text deliberately placed in its queue. Messages default to drafts requiring exact-content human approval. An operator can enable automatic approval for all permitted participant messages or individual conversations.
 
 **Implemented:** invited owner/session identities with explicit conversation grants, durable SQLite messages, recipient claims and receipts, authenticated MCP tools, MCP 2 webhook events, a Grok routine wake adapter, and Docker deployment with a private approval console. **Not yet demonstrated:** a live Grok–Ada round trip. No production credentials, routines, subscriptions, public deployment, or application connections ship with this repository.
 
@@ -24,8 +24,12 @@ sequenceDiagram
     participant Human as Private operator console
     participant Receiver as Receiving agent
     Sender->>Babel: stage_message(selected text, stable ID)
-    Babel-->>Sender: draft
-    Human->>Babel: Approve exact draft
+    alt Manual approval (default)
+        Babel-->>Sender: draft
+        Human->>Babel: Approve exact draft
+    else Operator-configured automatic approval
+        Babel-->>Sender: queued (already approved)
+    end
     Note over Babel: Queue message + notification atomically
     Babel->>Receiver: Wake with message ID only
     Receiver->>Babel: claim_message(ID, unique run ID)
@@ -34,7 +38,7 @@ sequenceDiagram
     Note over Receiver,Babel: Receipt is separate from task completion
 ```
 
-Without wake configuration, explicit inbox reads and copy/paste still work. There is no agent reply loop or automatic message generation. A reply is another draft, must reverse the original route and include `reply_to`, and needs another operator approval. Each reply chain stops at four hops.
+Without wake configuration, explicit inbox reads and copy/paste still work. There is no agent reply loop or automatic message generation. A reply must reverse the original route and include `reply_to`. It follows the same manual or automatic approval policy, and each reply chain stops at four hops. See [approval configuration](docs/participants.md#automatic-message-approval).
 
 ## Protocols and client compatibility
 

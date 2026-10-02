@@ -105,6 +105,11 @@ class Policy:
         elif conversation is not None or recipient not in self.agents[source][1]:
             raise BridgeError("Agent route is not permitted",403)
 
+    def auto_approves(self, conversation, source, recipient):
+        self.assert_route(conversation,source,recipient)
+        return (self.multi_owner and
+                self.conversations[conversation].get("approval",self.approval_mode)=="automatic")
+
     def check_row(self, row):
         self.assert_route(row.get("conversation_id"),row["source"],row["recipient"])
         if self.multi_owner and (row.get("source_owner")!=self.participants[row["source"]]["owner"]
