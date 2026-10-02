@@ -103,6 +103,18 @@ class EventTests(unittest.TestCase):
         self.store.approve(row["id"])
         return row
 
+    def test_unapproved_callback_logs_only_recipient_and_host(self):
+        self.service=EventService(self.store,policy(),WakeConfig(),self.transport)
+        with self.assertLogs("babel.events",level="WARNING") as logs:
+            with self.assertRaises(BridgeError):
+                self.subscribe(delivery={"mode":"webhook","url":"https://native.example.com/private-callback-path","secret":KEY})
+        output=" ".join(logs.output)
+        self.assertIn("participant=ada callback_host=native.example.com",output)
+        self.assertNotIn("private-callback-path",output)
+        self.assertNotIn(KEY,output)
+        self.assertEqual(self.transport.calls,[])
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM subscriptions").fetchone()[0],0)
+
     def test_verify_idempotent_subscribe_minimal_event_and_ack_separation(self):
         first=self.subscribe()
         self.assertEqual(first["id"],self.subscribe()["id"])

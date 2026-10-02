@@ -2,14 +2,18 @@
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
+import re
 import secrets
 import time
+from urllib.parse import urlsplit
 from .core import AGENTS, BridgeError, fields
 from .wake import CallbackError, WebhookTransport, key_bytes, signed_headers, GrokWebhookAdapter
 
 EVENT_NAME = "babel.message.approved"
 DEFAULT_TTL_MS = 3600000
 MAX_ATTEMPTS = 8
+LOG = logging.getLogger(__name__)
 
 def iso(timestamp):
     return datetime.fromtimestamp(timestamp, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -91,7 +95,20 @@ class EventService:
         if not isinstance(delivery["url"], str) or len(delivery["url"]) > 2048:
             raise BridgeError("Invalid callback URL")
         if subscribe:
-            self.config.destination(role, delivery["url"])
+            try:
+                self.config.destination(role, delivery["url"])
+            except BridgeError:
+                # Give the private operator enough information to approve the
+                # native client's actual destination, without retaining secrets.
+                try:
+                    callback=urlsplit(delivery["url"])
+                    host=callback.hostname
+                    if (callback.scheme=="https" and host and callback.netloc==host
+                            and "." in host and re.fullmatch(r"[a-z0-9.-]{1,253}",host)):
+                        LOG.warning("Callback approval required: participant=%s callback_host=%s",role,host)
+                except ValueError:
+                    pass
+                raise
             key_bytes(delivery["secret"])
             if params.get("cursor") is not None:
                 raise EventError(-32014, "Event replay cursors are unsupported", {"feature": "cursor"})

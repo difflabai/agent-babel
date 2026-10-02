@@ -34,6 +34,8 @@ To discover a real configured provider before enrolling its users, an operator m
 
 JWT algorithms are fixed to RS256; `kid` only selects a pinned key. Issuer and resource audience must match exactly. Expiration/not-before/issued-at are validated. `babel` scope and the exact configured subject/client pair are required. Unknown signing keys, algorithm substitution, overlong lifetime, other accounts/clients and malformed tokens fail closed. Ingress role binding and recipient claims apply identically to OAuth and static credentials.
 
+If an authenticated recipient attempts a webhook subscription before its callback host is approved, the private server log records only the participant ID and hostname. It never records the callback path, query, signing secret, token or request body. Use that observed native hostname to review the exact allowlist; the denied attempt does not create a subscription or send a verification request. Retry the subscription after configuring the approved host and outbound access.
+
 Offline signature verification cannot instantly see a provider-side logout/revocation. Short access-token lifetimes bound that window. To revoke bridge access immediately, remove its explicit principal binding from `agents.json` and recreate the gateway/worker. Worker authorization fingerprints invalidate old subscriptions when bindings change; fresh access-token issuance alone does not change subscription identity.
 
 ## Test evidence versus setup
