@@ -40,11 +40,13 @@ def configure(policy, config, oauth_roles):
             raise BridgeError("Participant identity must match its explicit owner, client and session")
         if entry["state"] not in STATES or type(entry["accepted"]) is not bool:
             raise BridgeError("Invalid participant lifecycle")
-        if type(entry["expires"]) is not int or type(entry["activated_at"]) is not int:
-            raise BridgeError("Participant times must be Unix integer seconds")
-        if entry["state"]=="active" and (not entry["accepted"] or not 0<entry["activated_at"]<entry["expires"]
-                or entry["expires"]-entry["activated_at"]>lifetime_limit(entry["client"])):
-            raise BridgeError("Active enrollment requires owner acceptance and a bounded session lifetime")
+        expires=entry["expires"]
+        if (expires is not None and type(expires) is not int) or type(entry["activated_at"]) is not int:
+            raise BridgeError("Participant expiry must be null or Unix integer seconds")
+        if entry["state"]=="active" and (not entry["accepted"] or entry["activated_at"]<=0
+                or (expires is not None and (expires<=entry["activated_at"]
+                    or expires-entry["activated_at"]>lifetime_limit(entry["client"])))):
+            raise BridgeError("Active enrollment requires owner acceptance and a valid optional session lifetime")
         value=entry.get("sha256")
         if value is not None:
             if not isinstance(value,str) or not DIGEST.fullmatch(value) or value=="0"*64 or value in seen:
