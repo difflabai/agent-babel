@@ -9,7 +9,7 @@ import tempfile
 import time
 from .auth import Policy
 from .core import BridgeError, fields, identifier
-from .participants import COMPONENT, CLIENTS
+from .participants import COMPONENT, CLIENTS, lifetime_limit
 
 def validate(config):
     if not isinstance(config,dict) or config.get("schema_version")!=3:
@@ -45,14 +45,14 @@ def change(config, action, **args):
         pid=owner+"."+client+"."+session
         if pid in result["participants"]: raise BridgeError("Instance already exists; use a fresh session ID")
         expires=args["expires"]; now=int(time.time())
-        if type(expires) is not int or not now<expires<=now+(86400 if client in ("codex","cursor") else 2592000):
+        if type(expires) is not int or not now<expires<=now+lifetime_limit(client):
             raise BridgeError("Invitation expiry must be future and within the client lifetime limit")
         result["participants"][pid]={"owner":owner,"client":client,"session":session,"state":"invited",
                                     "accepted":False,"expires":expires,"activated_at":0}
     elif action=="expiry":
         entry=result["participants"].get(args["participant"])
         now=int(time.time()); expires=args["expires"]
-        if not entry or entry["state"]!="invited" or not now<expires<=now+(86400 if entry["client"] in ("codex","cursor") else 2592000):
+        if not entry or entry["state"]!="invited" or not now<expires<=now+lifetime_limit(entry["client"]):
             raise BridgeError("Only a pending invitation may receive a new bounded expiry")
         entry["expires"]=expires
     elif action=="activate":

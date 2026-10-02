@@ -215,6 +215,22 @@ class ParticipantTests(unittest.TestCase):
         self.assertEqual(self.store.message_status(row["id"],CODEX)["status"],"queued")
 
 class EnrollmentTests(unittest.TestCase):
+    def test_claude_and_opencode_have_distinct_bounded_interactive_instances(self):
+        from babel.core import agent
+        for client in ("claude", "opencode"):
+            with self.subTest(client=client):
+                cfg=fixture(); now=int(time.time())
+                cfg=change(cfg,"invite",owner="owner_a",client=client,session="task_01",expires=now+3600)
+                pid="owner_a."+client+".task_01"
+                self.assertEqual(agent(pid),pid)
+                token="public-synthetic-"+client+"-instance-0000"
+                cfg=change(cfg,"activate",participant=pid,accepted=True,sha256=hashlib.sha256(token.encode()).hexdigest())
+                self.assertEqual(Policy(cfg).agents[pid][1],frozenset())
+                with self.assertRaises(BridgeError):
+                    change(fixture(),"invite",owner="owner_a",client=client,session="too_long",expires=now+86401)
+                cfg["participants"][pid]["expires"]=cfg["participants"][pid]["activated_at"]+86401
+                with self.assertRaises(BridgeError): Policy(cfg)
+
     def test_invitation_has_no_credential_or_permission_until_operator_activation(self):
         cfg=fixture()
         cfg=change(cfg,"invite",owner="owner_b",client="codex",session="new_run",expires=int(time.time())+1800)

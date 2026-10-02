@@ -6,9 +6,13 @@ import time
 from .core import AGENTS, BridgeError, fields
 
 COMPONENT = re.compile(r"[a-z][a-z0-9_-]{0,31}\Z")
-CLIENTS = ("dots","grokbot","codex","cursor","muse")
-PARTICIPANT = re.compile(r"[a-z][a-z0-9_-]{0,31}\.(?:dots|grokbot|codex|cursor|muse)\.[a-z][a-z0-9_-]{0,47}\Z")
+CLIENTS = ("dots","grokbot","codex","cursor","claude","opencode","muse")
+INTERACTIVE_CLIENTS = frozenset(("codex", "cursor", "claude", "opencode"))
+PARTICIPANT = re.compile(r"[a-z][a-z0-9_-]{0,31}\." + "(?:" + "|".join(CLIENTS) + r")\.[a-z][a-z0-9_-]{0,47}\Z")
 STATES = ("invited","active","closed","revoked")
+
+def lifetime_limit(client):
+    return 86400 if client in INTERACTIVE_CLIENTS else 2592000
 
 def digest(value):
     return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(",",":")).encode()).hexdigest()
@@ -39,7 +43,7 @@ def configure(policy, config, oauth_roles):
         if type(entry["expires"]) is not int or type(entry["activated_at"]) is not int:
             raise BridgeError("Participant times must be Unix integer seconds")
         if entry["state"]=="active" and (not entry["accepted"] or not 0<entry["activated_at"]<entry["expires"]
-                or entry["expires"]-entry["activated_at"]>(86400 if entry["client"] in ("codex","cursor") else 2592000)):
+                or entry["expires"]-entry["activated_at"]>lifetime_limit(entry["client"])):
             raise BridgeError("Active enrollment requires owner acceptance and a bounded session lifetime")
         value=entry.get("sha256")
         if value is not None:
