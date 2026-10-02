@@ -54,6 +54,19 @@ class OAuthTests(unittest.TestCase):
         self.assertEqual(p.authenticate("Bearer "+GROK),"grokbot")
         self.assertEqual(p.authenticate("Bearer "+self.token({"scope":"other babel"})),"ada")
         self.rejected(GROK+"\n")
+    def test_unenrolled_provider_publishes_metadata_but_grants_no_oauth_access(self):
+        cfg=copy.deepcopy(self.cfg)
+        cfg["oauth"]["principals"]={}
+        static_ada="synthetic-static-ada-credential-0001"
+        cfg["agents"]["ada"]["sha256"]=hashlib.sha256(static_ada.encode()).hexdigest()
+        p=self.policy(cfg)
+        self.assertEqual(p.metadata()["authorization_servers"],[cfg["oauth"]["issuer"]])
+        self.assertEqual(p.authenticate("Bearer "+GROK),"grokbot")
+        self.assertEqual(p.authenticate("Bearer "+static_ada),"ada")
+        with self.assertRaises(BridgeError) as exc:
+            p.authenticate("Bearer "+self.token())
+        self.assertEqual(exc.exception.status,403)
+        self.assertEqual(p.bindings,{})
     def test_signature_algorithm_and_key_selection(self):
         other=rsa.generate_private_key(public_exponent=65537,key_size=2048)
         self.rejected(self.token(key=other))

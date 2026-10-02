@@ -30,6 +30,8 @@ A self-hosted [Keycloak provider](https://www.keycloak.org/securing-apps/oidc-la
 
 In a static-only deployment the two discovery URLs are also public, describing the resource and header-based bearer transport. They omit authorization servers and OAuth scopes until a real provider is configured. Public metadata alone does not enable ChatGPT OAuth sign-in; complete the provider and principal setup above first.
 
+To discover a real configured provider before enrolling its users, an operator may use an explicit empty `oauth.principals` object with the verified issuer and pinned public JWKS. All OAuth users are denied until exact bindings are added; existing static credentials continue to work. This supports obtaining the actual native client metadata and user identity during setup without placeholders or automatic enrollment. It does not complete OAuth acceptance.
+
 JWT algorithms are fixed to RS256; `kid` only selects a pinned key. Issuer and resource audience must match exactly. Expiration/not-before/issued-at are validated. `babel` scope and the exact configured subject/client pair are required. Unknown signing keys, algorithm substitution, overlong lifetime, other accounts/clients and malformed tokens fail closed. Ingress role binding and recipient claims apply identically to OAuth and static credentials.
 
 Offline signature verification cannot instantly see a provider-side logout/revocation. Short access-token lifetimes bound that window. To revoke bridge access immediately, remove its explicit principal binding from `agents.json` and recreate the gateway/worker. Worker authorization fingerprints invalidate old subscriptions when bindings change; fresh access-token issuance alone does not change subscription identity.

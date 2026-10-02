@@ -25,7 +25,7 @@ class OAuthPolicy(Policy):
             raise BridgeError("OAuth resource must be the exact public /mcp URL")
         public_origin(resource[:-4])
         principals = oauth["principals"]
-        if not isinstance(principals,dict) or not principals:
+        if not isinstance(principals,dict):
             raise BridgeError("Explicit OAuth principal bindings are required")
         self.bindings = {}
         identities=config.get("participants") if config.get("schema_version")==3 else config.get("agents")
