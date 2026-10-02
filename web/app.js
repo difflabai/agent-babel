@@ -43,6 +43,7 @@ function render(messages) {
     add(card, "span", message.status, "badge " + message.status);
     add(card, "pre", message.text);
     add(card, "small", message.id + " · hop " + message.hops + "/4 · " + message.provenance);
+    if (message.conversation_id) add(card,"small","Conversation: "+message.conversation_id);
     if (message.reply_to) add(card, "small", "Reply to " + message.reply_to);
     if (message.receipt) add(card, "small", "Receipt evidence: " + message.receipt + " (does not confirm task completion)");
     const actions = add(card, "div", undefined, "actions");
@@ -68,6 +69,7 @@ function render(messages) {
       });
     }
     if (message.status === "queued" || message.status === "acknowledged") button(actions, "Draft an explicit reply", () => {
+      if (message.conversation_id) $("conversation_id").value=message.conversation_id;
       $("source").value = message.recipient; $("recipient").value = message.source;
       $("reply_to").value = message.id; $("text").value = ""; $("text").focus();
       $("compose").scrollIntoView({behavior: "smooth"}); tell("Select the reply text yourself, then create a new draft.");
@@ -89,6 +91,7 @@ $("compose").addEventListener("submit", async event => {
     const text = $("text").value;
     if (new TextEncoder().encode(text).length > 16384) throw new Error("Message exceeds 16 KiB in UTF-8.");
     const input = {source: $("source").value, recipient: $("recipient").value, text};
+    if (!$("conversation_label").hidden) input.conversation_id=$("conversation_id").value;
     if ($("reply_to").value.trim()) input.reply_to = $("reply_to").value.trim();
     const fingerprint = JSON.stringify(input);
     if (!pendingSubmission || pendingSubmission.fingerprint !== fingerprint)
@@ -120,4 +123,8 @@ $("copy").onclick = async () => {
   } catch (_) { $("copy_text").select(); tell("Select and copy this text manually with Ctrl/Cmd+C."); }
 };
 $("close_handoff").onclick = () => { $("handoff").hidden = true; $("copy_text").value = ""; };
-(async () => { csrf = (await api("/api/session")).csrf; await reload(); })().catch(error => tell(error.message, true));
+(async () => { const session=await api("/api/session"); csrf=session.csrf;
+  for (const field of ["source","recipient","inbox_agent"]) { $(field).replaceChildren(); for (const name of session.agents) { const option=add($(field),"option",label(name)); option.value=name; } }
+  if (session.agents.length>1) $("recipient").selectedIndex=1;
+  if (session.conversations && session.conversations.length) { $("conversation_label").hidden=false; for (const cid of session.conversations) { const option=add($("conversation_id"),"option",cid); option.value=cid; } }
+  await reload(); })().catch(error => tell(error.message, true));

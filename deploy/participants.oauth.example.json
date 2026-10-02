@@ -1,0 +1,43 @@
+{
+  "schema_version": 3,
+  "owners": {
+    "owner_a": {
+      "enabled": true
+    },
+    "owner_b": {
+      "enabled": true
+    }
+  },
+  "participants": {
+    "owner_a.dots.dot_01": {
+      "owner": "owner_a",
+      "client": "dots",
+      "session": "dot_01",
+      "state": "invited",
+      "accepted": false,
+      "expires": 0,
+      "activated_at": 0
+    },
+    "owner_b.cursor.guest_01": {
+      "owner": "owner_b",
+      "client": "cursor",
+      "session": "guest_01",
+      "state": "invited",
+      "accepted": false,
+      "expires": 0,
+      "activated_at": 0
+    }
+  },
+  "conversations": {},
+  "oauth": {
+    "issuer": "https://YOUR_TENANT.auth0.com/",
+    "resource": "https://YOUR_DOMAIN/mcp",
+    "jwks_file": "/run/secrets/babel_jwks",
+    "principals": {
+      "owner_a.dots.dot_01": {
+        "subject": "<actual-provider-subject>",
+        "client_id": "<actual-registered-client-id>"
+      }
+    }
+  }
+}

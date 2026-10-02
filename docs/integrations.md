@@ -13,3 +13,5 @@ Research reviewed against official public documentation on 2026-10-02. No instal
 - [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy): the deployed public ingress forwards authenticated MCP routes and public standards resource metadata, with explicit trusted proxy headers.
 
 No third-party MCP mods are installed or bundled. Wider transcript/file/shell adapters are outside this bridge's scope.
+
+- [Cursor MCP](https://cursor.com/docs/mcp) supports remote tools/auth headers; [Cursor Automations](https://cursor.com/docs/cloud-agent/automations) separately supports webhook-triggered cloud runs. No arbitrary existing-chat wake or Cursor wake wire adapter is claimed. See [the current capability matrix](clients.md).

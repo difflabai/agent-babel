@@ -1,5 +1,6 @@
 """Public MCP only. Never serves operator routes, assets or global history."""
 from urllib.parse import urlsplit
+import threading
 from .auth import Policy, ScopedStore, public_origin
 from .core import BridgeError, Store
 from .mcp import dispatch
@@ -13,6 +14,8 @@ class Gateway(BoundedServer):
         # Validate all security configuration BEFORE listening or opening storage.
         self.origin = public_origin(origin)
         self.policy = policy
+        self.policy_lock=threading.RLock()
+        self.policy_file=getattr(policy,"source_file",None)
         if hasattr(policy,"oauth") and policy.oauth["resource"] != self.origin + "/mcp":
             raise BridgeError("OAuth resource must match the gateway public origin and /mcp")
         if not isinstance(policy, Policy):
@@ -20,9 +23,23 @@ class Gateway(BoundedServer):
         self.hosts = {urlsplit(self.origin).netloc}
         self.origins = {self.origin}
         self.store = store if store is not None else Store()
+        self.store.sync_policy(policy)
+        self.wake_config=wake_config or WakeConfig()
+        self.transport=transport
         self.events = EventService(self.store, policy, wake_config or WakeConfig(), transport)
         super().__init__((host, port), GatewayHandler)
         self.port = self.server_address[1]
+
+    def current_policy(self):
+        with self.policy_lock:
+            if self.policy_file:
+                latest=Policy.load(self.policy_file)
+                if hasattr(latest,"oauth") and latest.oauth["resource"]!=self.origin+"/mcp":
+                    raise BridgeError("OAuth resource does not match this gateway",503)
+                latest.lock=self.policy.lock; latest.requests=self.policy.requests
+                self.store.sync_policy(latest)
+                self.policy=latest
+            return self.policy
 
 class GatewayHandler(Handler):
     def check_edge(self):
@@ -40,10 +57,11 @@ class GatewayHandler(Handler):
         # Backend is exposed only to a trusted TLS reverse proxy. It must replace
         # Host/forwarding headers; forwarding headers are NOT an authentication method.
         self.check_edge()
+        self.request_policy=self.server.current_policy()
         headers = self.headers.get_all("Authorization", [])
         if len(headers) != 1:
             raise BridgeError("Agent authentication required", 401)
-        return self.server.policy.authenticate(headers[0])
+        return self.request_policy.authenticate(headers[0])
 
     def fail(self, exc):
         extra = None
@@ -66,7 +84,7 @@ class GatewayHandler(Handler):
         try:
             if self.path in ("/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp") and hasattr(self.server.policy,"oauth"):
                 self.check_edge()
-                self.respond(200,self.server.policy.metadata())
+                self.respond(200,self.server.current_policy().metadata())
                 return
             self.authorize()
             if self.path not in ("/mcp", "/mcp/v1"):
@@ -90,9 +108,12 @@ class GatewayHandler(Handler):
             if "application/json" not in accept or "text/event-stream" not in accept:
                 raise BridgeError("MCP Accept must include application/json and text/event-stream", 406)
             request = self.read_json()
-            scoped = ScopedStore(self.server.store, role, self.server.policy.agents[role][1])
+            scoped = ScopedStore(self.server.store, role, self.request_policy.agents[role][1],self.request_policy)
+            wake_config=self.server.wake_config
+            if getattr(wake_config,"source_file",None): wake_config=WakeConfig.load(wake_config.source_file)
+            events=EventService(self.server.store,self.request_policy,wake_config,self.server.transport)
             if modern:
-                status, result = mcp2.dispatch(scoped, role, request, self.server.events, self.headers)
+                status, result = mcp2.dispatch(scoped, role, request, events, self.headers)
                 self.respond(status, result)
             else:
                 result = dispatch(scoped, role, request, versions=HTTP_VERSIONS)

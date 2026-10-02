@@ -1,4 +1,5 @@
 """Tools-only MCP 1.x: newline stdio and stateless JSON Streamable HTTP."""
+import copy
 import json
 import sys
 from .core import AGENTS, BridgeError, MAX_TEXT_BYTES, Store, agent, fields, identifier
@@ -20,6 +21,8 @@ def schema(properties, required=()):
 
 STRING = {"type": "string", "minLength": 8, "maxLength": 128}
 TOOLS = [
+    # Participant catalogs use strings below because clients cache tool schemas.
+    # Current route grants are enforced on every call; list_contacts discovers peers.
     {"name": "stage_message", "description": "Stage explicitly selected text for another agent. "
      "Creates a draft only; the user approves it in the local UI before it becomes receivable. "
      "Use a stable message_id for retries. Replies must reference reply_to.",
@@ -53,6 +56,10 @@ TOOLS = [
          "before": {"type": "integer", "minimum": 1}}),
      "annotations": {"readOnlyHint": True, "destructiveHint": False,
                      "idempotentHint": True, "openWorldHint": False}},
+    {"name": "list_contacts", "description": "Discover currently permitted outgoing recipients and their conversation IDs. Call again when instances join or leave; this never exposes unrelated owners or sessions.",
+     "inputSchema": schema({}),
+     "annotations": {"readOnlyHint": True, "destructiveHint": False,
+                     "idempotentHint": True, "openWorldHint": False}},
 ]
 
 def dispatch(store, role, request, versions=VERSIONS):
@@ -74,24 +81,36 @@ def dispatch(store, role, request, versions=VERSIONS):
         requested = params.get("protocolVersion")
         version = requested if requested in versions else versions[0]
         result = {"protocolVersion": version, "capabilities": {"tools": {"listChanged": False}},
-                  "serverInfo": {"name": "agent-babel", "version": "0.3.0"},
+                  "serverInfo": {"name": "agent-babel", "version": "0.4.0"},
                   "instructions": INSTRUCTIONS}
     elif method == "ping":
         result = {}
     elif method == "tools/list":
-        result = {"tools": TOOLS}
+        tools=copy.deepcopy(TOOLS)
+        policy=getattr(store,"policy",None)
+        if policy and policy.multi_owner:
+            stage=tools[0]["inputSchema"]
+            stage["properties"]["recipient"]={"type":"string","description":"A current permitted recipient from list_contacts."}
+            stage["properties"]["conversation_id"]={"type":"string","description":"The matching current conversation ID from list_contacts."}
+            stage["required"].append("conversation_id")
+        result = {"tools": tools}
     elif method == "tools/call":
         try:
             fields(params, ("name", "arguments", "_meta"), ("name",))
             name, args = params["name"], params.get("arguments", {})
             if name == "stage_message":
-                fields(args, ("recipient", "text", "message_id", "reply_to"),
+                fields(args, ("recipient", "text", "message_id", "reply_to", "conversation_id"),
                        ("recipient", "text", "message_id"))
                 identifier(args["message_id"])
                 result = store.stage(role, provenance="mcp", **args)
             elif name == "receive_messages":
                 fields(args, ("limit",))
                 result = {"messages": store.inbox(role, **args), "notice": "Receipt requires explicit acknowledgment."}
+            elif name == "list_contacts":
+                fields(args, ())
+                contacts=store.contacts(role) if hasattr(store,"contacts") else [
+                    {"recipient":recipient,"conversation_id":None} for recipient in AGENTS if recipient!=role]
+                result={"contacts":contacts}
             elif name == "claim_message":
                 fields(args, ("message_id", "claim_id"), ("message_id", "claim_id"))
                 result = store.claim_message(args["message_id"], role, args["claim_id"])
@@ -121,6 +140,11 @@ def dispatch(store, role, request, versions=VERSIONS):
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 def stdio(role):
+    import os
+    if os.environ.get("BABEL_AUTH_FILE"):
+        from .auth import Policy
+        if Policy.load(os.environ["BABEL_AUTH_FILE"]).multi_owner:
+            raise BridgeError("Multi-owner clients must use authenticated HTTP; trusted stdio is disabled")
     store = Store()
     try:
         while True:

@@ -7,7 +7,7 @@
 <div class="status">Private approvals · Real apps are not connected by default · No background replies</div></header>
 <section class="compose"><h2>Choose what to share</h2>
 <p>Paste only the content you want in the bridge. Sender names on manual messages are labels you choose.</p>
-<form id="compose"><div class="route">
+<form id="compose"><label id="conversation_label" hidden>Conversation<select id="conversation_id"></select></label><div class="route">
 <label>From<select id="source"><option value="ada">Ada / ChatGPT</option><option value="grokbot">Grokbot</option><option value="muse">Muse (future)</option></select></label>
 <label>To<select id="recipient"><option value="grokbot">Grokbot</option><option value="ada">Ada / ChatGPT</option><option value="muse">Muse (future)</option></select></label></div>
 <label>Selected content<textarea id="text" rows="5" required placeholder="Write or paste the exact message to hand off."></textarea></label>

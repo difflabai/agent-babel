@@ -28,8 +28,9 @@ class OAuthPolicy(Policy):
         if not isinstance(principals,dict) or not principals:
             raise BridgeError("Explicit OAuth principal bindings are required")
         self.bindings = {}
+        identities=config.get("participants") if config.get("schema_version")==3 else config.get("agents")
         for role, value in principals.items():
-            if not isinstance(config.get("agents"),dict) or role not in config["agents"]:
+            if not isinstance(identities,dict) or role not in identities:
                 raise BridgeError("OAuth role must be a configured bridge agent")
             fields(value, ("subject","client_id"), ("subject","client_id"))
             if any(not isinstance(value[k],str) or not value[k] or len(value[k])>256 or "<" in value[k]
@@ -42,7 +43,7 @@ class OAuthPolicy(Policy):
         base = {k:v for k,v in config.items() if k != "oauth"}
         super().__init__(base, oauth_roles=set(principals))
         self.oauth = oauth
-        self.static_digests = {role:entry[0] for role,entry in self.agents.items() if entry[0]}
+        self.static_digests = dict(self.credential_digests)
         # Durable subscription authorization changes whenever role bindings change,
         # not whenever a short-lived access token is refreshed.
         for role, entry in list(self.agents.items()):
@@ -122,5 +123,8 @@ class OAuthPolicy(Policy):
                 raise
             except (self.jwt.PyJWTError,ValueError,TypeError,KeyError):
                 raise BridgeError("Invalid OAuth access token",401) from None
+        self.assert_active(role)
+        if self.multi_owner and "." in token and claims["iat"]<self.participants[role]["activated_at"]:
+            raise BridgeError("OAuth token predates this instance enrollment",401)
         self.limit_request(role)
         return role

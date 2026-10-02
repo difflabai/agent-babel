@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import json
+import os
 import secrets
 import threading
 from .adapters import ManualAdapter, MockAdapter
@@ -42,13 +43,20 @@ class Server(BoundedServer):
     def __init__(self, port, store=None, container=False):
         super().__init__(("0.0.0.0" if container else "127.0.0.1", port), Handler)
         self.store = store if store is not None else Store()
+        self.policy_file=os.environ.get("BABEL_AUTH_FILE")
+        self.store.policy_provider=self.current_policy if self.policy_file else None
+        if self.policy_file: self.store.sync_policy(self.current_policy())
         self.csrf = secrets.token_urlsafe(32)  # ephemeral CSRF token; no API key or persistent grant
         self.port = self.server_address[1]
         self.hosts = {"127.0.0.1:" + str(self.port), "localhost:" + str(self.port)}
         self.origins = {"http://" + value for value in self.hosts}
 
+    def current_policy(self):
+        from .auth import Policy
+        return Policy.load(self.policy_file) if self.policy_file else None
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AgentBabel/0.1"
+    server_version = "AgentBabel/0.4"
     def setup(self):
         super().setup()
         self.connection.settimeout(5)
@@ -87,6 +95,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
 
     def mcp_role(self, path):
+        if getattr(self.server,"policy_file",None) and self.server.current_policy().multi_owner and (path=="/mcp" or path.startswith("/mcp/")):
+            raise BridgeError("Trusted local MCP is disabled for multi-owner configuration",403)
         if path == "/mcp":
             return "ada"
         if path.startswith("/mcp/") and path[5:] in AGENTS:
@@ -131,10 +141,20 @@ class Handler(BaseHTTPRequestHandler):
                                 "style.css": "text/css; charset=utf-8"}[name]
                 self.respond(200, (ROOT / "web" / name).read_bytes(), content_type)
             elif path == "/api/session":
-                self.respond(200, {"csrf": self.server.csrf, "agents": list(AGENTS)})
+                policy=self.server.current_policy()
+                participants=list(AGENTS); conversations=[]
+                if policy and policy.multi_owner:
+                    self.server.store.sync_policy(policy)
+                    participants=[]
+                    for pid in policy.participants:
+                        try: policy.assert_active(pid)
+                        except BridgeError: continue
+                        participants.append(pid)
+                    conversations=[cid for cid,c in policy.conversations.items() if c["state"]=="active"]
+                self.respond(200, {"csrf": self.server.csrf, "agents": participants, "conversations":conversations})
             elif path == "/api/health":
                 self.respond(200, {"status": "ok", "network": "loopback-only", "live_adapters": False,
-                                  "events": False, "mcp": "tools-only", "version": "0.2.0"})
+                                  "events": False, "mcp": "tools-only", "version": "0.4.0"})
             elif path == "/api/wake-status":
                 self.respond(200, self.server.store.wake_status())
             elif path == "/api/history":
@@ -174,10 +194,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             store = self.server.store
             if path == "/api/stage":
-                fields(data, ("source", "recipient", "text", "message_id", "reply_to"),
+                fields(data, ("source", "recipient", "text", "message_id", "reply_to", "conversation_id"),
                        ("source", "recipient", "text", "message_id"))
                 identifier(data["message_id"])
-                result = store.stage(**data)
+                result = store.stage(policy=self.server.current_policy(),**data)
             elif path in ("/api/approve", "/api/cancel", "/api/export", "/api/mock", "/api/events"):
                 fields(data, ("message_id",), ("message_id",))
                 mid = data["message_id"]

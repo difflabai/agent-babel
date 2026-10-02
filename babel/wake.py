@@ -13,7 +13,7 @@ import ssl
 import threading
 import time
 from urllib.parse import urlsplit
-from .core import AGENTS, BridgeError, fields
+from .core import AGENTS, BridgeError, fields, agent
 
 class CallbackError(Exception):
     def __init__(self, reason):
@@ -46,7 +46,7 @@ def signed_headers(secret, webhook_id, body, subscription_id, old_secret=None, s
 class WakeConfig:
     def __init__(self, config=None):
         config = config or {"enabled": False, "callback_hosts": {}}
-        fields(config, ("enabled", "callback_hosts", "grok"), ("enabled", "callback_hosts"))
+        fields(config, ("enabled", "callback_hosts", "grok", "grok_routines"), ("enabled", "callback_hosts"))
         if type(config["enabled"]) is not bool or not isinstance(config["callback_hosts"], dict):
             raise BridgeError("Invalid wake configuration")
         self.enabled = config["enabled"]
@@ -59,9 +59,22 @@ class WakeConfig:
             key = self.grok["sender_key"]
             if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._~+/-]{20,512}=*", key):
                 raise BridgeError("Grok sender key must be a non-placeholder Bearer credential")
+        self.grok_routines=config.get("grok_routines",{})
+        if not isinstance(self.grok_routines,dict) or len(self.grok_routines)>64:
+            raise BridgeError("Invalid participant Grok routine configuration")
+        for role,routine in self.grok_routines.items():
+            agent(role)
+            if role in AGENTS: raise BridgeError("Participant routine requires a distinct instance ID")
+            fields(routine,("enabled","url","sender_key"),("enabled",))
+            if type(routine["enabled"]) is not bool: raise BridgeError("Invalid Grok routine state")
+            if routine["enabled"]:
+                fields(routine,("enabled","url","sender_key"),("enabled","url","sender_key"))
+                if not isinstance(routine["sender_key"],str) or not re.fullmatch(r"[A-Za-z0-9._~+/-]{20,512}=*",routine["sender_key"]):
+                    raise BridgeError("Invalid Grok routine sender credential")
         self.hosts = {}
         for role, hosts in config["callback_hosts"].items():
-            if role not in AGENTS or not isinstance(hosts, list) or len(hosts) > 8:
+            agent(role)
+            if not isinstance(hosts, list) or len(hosts) > 8:
                 raise BridgeError("Invalid callback allowlist")
             if any(not isinstance(h, str) or not re.fullmatch(r"[a-z0-9][a-z0-9.-]*[a-z0-9]", h)
                    or "." not in h or h.endswith(".invalid") for h in hosts):
@@ -69,6 +82,8 @@ class WakeConfig:
             self.hosts[role] = frozenset(hosts)
         if self.grok["enabled"]:
             self.destination("grokbot", self.grok["url"])
+        for role,routine in self.grok_routines.items():
+            if routine["enabled"]: self.destination(role,routine["url"])
         if self.enabled and not self.hosts:
             raise BridgeError("Enabled wakes require recipient callback host allowlists")
 
@@ -80,9 +95,14 @@ class WakeConfig:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
             raise BridgeError("Wake config must be a regular file of at most 8 KiB")
         try:
-            return cls(json.loads(path.read_text(encoding="utf-8")))
+            result=cls(json.loads(path.read_text(encoding="utf-8")))
+            result.source_file=str(path)
+            return result
         except (ValueError, UnicodeError, TypeError):
             raise BridgeError("Invalid wake configuration") from None
+
+    def grok_for(self,role):
+        return self.grok if role=="grokbot" else self.grok_routines.get(role,{"enabled":False})
 
     def destination(self, role, url):
         if not self.enabled:
@@ -184,14 +204,16 @@ class WebhookTransport:
 
 class GrokWebhookAdapter:
     """User-supplied routine contract: Bearer JSON POST, only 200 accepts wake."""
-    def __init__(self, config, transport=None):
+    def __init__(self, config, transport=None, role="grokbot"):
         self.config, self.transport = config, transport or WebhookTransport(config)
+        self.role=role
 
     def send(self, body):
-        if not self.config.enabled or not self.config.grok["enabled"]:
+        routine=self.config.grok_for(self.role)
+        if not self.config.enabled or not routine["enabled"]:
             raise BridgeError("Grok wake is disabled", 403)
         packet = json.loads(body)
-        if set(packet) != {"message_id", "event", "to", "from"} or packet["to"] != "grokbot" or packet["event"] != "bridge.message_ready":
+        if set(packet) != {"message_id", "event", "to", "from"} or packet["to"] != self.role or packet["event"] != "bridge.message_ready":
             raise BridgeError("Invalid Grok wake envelope")
-        return self.transport.post("grokbot", self.config.grok["url"], body,
-            {"Authorization": "Bearer " + self.config.grok["sender_key"], "Content-Type": "application/json"})
+        return self.transport.post(self.role, routine["url"], body,
+            {"Authorization": "Bearer " + routine["sender_key"], "Content-Type": "application/json"})

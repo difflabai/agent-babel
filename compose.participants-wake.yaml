@@ -1,0 +1,6 @@
+# Use with compose.participants.yaml AND compose.wake.yaml.
+services:
+  worker:
+    environment:
+      BABEL_AUTH_FILE: /run/babel-policy/agents.json
+    volumes: ["./secrets/participant-policy:/run/babel-policy:ro"]

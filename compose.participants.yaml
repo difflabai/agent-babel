@@ -1,0 +1,14 @@
+# Mutable participant-policy directory: atomic host edits are visible without restart.
+# It contains bridge auth policy only; raw wake keys stay in separate file-backed secrets.
+services:
+  gateway:
+    environment:
+      BABEL_AUTH_FILE: /run/babel-policy/agents.json
+    volumes: ["./secrets/participant-policy:/run/babel-policy:ro"]
+  operator:
+    environment:
+      BABEL_AUTH_FILE: /run/babel-policy/agents.json
+    volumes: ["./secrets/participant-policy:/run/babel-policy:ro"]
+secrets:
+  babel_agents:
+    file: ./secrets/participant-policy/agents.json
