@@ -82,9 +82,12 @@ class GatewayHandler(Handler):
             self.respond(200, {"status": "ok"})
             return
         try:
-            if self.path in ("/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp") and hasattr(self.server.policy,"oauth"):
+            if self.path in ("/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"):
                 self.check_edge()
-                self.respond(200,self.server.current_policy().metadata())
+                policy=self.server.current_policy()
+                metadata=(policy.metadata() if hasattr(policy,"oauth") else
+                          {"resource":self.server.origin+"/mcp", "bearer_methods_supported":["header"]})
+                self.respond(200,metadata)
                 return
             self.authorize()
             if self.path not in ("/mcp", "/mcp/v1"):
