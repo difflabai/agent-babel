@@ -326,6 +326,15 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(self.request(body={},headers={"X-Forwarded-Proto":"http"})[0],403)
         self.assertEqual(self.request(body={},headers={"Origin":"https://evil.example.com"})[0],403)
         self.assertEqual(self.request(body={},headers={"Host":"evil.example.com"})[0],403)
+    def test_public_resource_metadata_does_not_unlock_messages_or_invent_provider(self):
+        for path in ("/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp"):
+            status,body,_=self.request(path,headers={"Authorization":""})
+            self.assertEqual(status,200)
+            self.assertEqual(json.loads(body),{
+                "resource":"https://bridge.example.com/mcp","bearer_methods_supported":["header"]})
+            self.assertEqual(self.request(path,headers={"Authorization":"","Host":"evil.example.com"})[0],403)
+        self.assertEqual(self.request(body={},headers={"Authorization":""})[0],401)
+        self.assertEqual(self.request("/api/history",headers={"Authorization":""})[0],401)
     def test_modern_discovery_methods_metadata_and_header_validation(self):
         status,body,_=self.modern("server/discover")
         self.assertEqual(status,200)

@@ -28,6 +28,8 @@ A self-hosted [Keycloak provider](https://www.keycloak.org/securing-apps/oidc-la
 
 `GET https://YOUR_DOMAIN/.well-known/oauth-protected-resource` and its `/mcp` suffix return public standards metadata only. They expose no messages, user profile, UI or credentials. Unauthenticated MCP requests return 401 with a `WWW-Authenticate` resource metadata challenge. Authenticated tool descriptions include the OAuth security scheme and required scope.
 
+In a static-only deployment the two discovery URLs are also public, describing the resource and header-based bearer transport. They omit authorization servers and OAuth scopes until a real provider is configured. Public metadata alone does not enable ChatGPT OAuth sign-in; complete the provider and principal setup above first.
+
 JWT algorithms are fixed to RS256; `kid` only selects a pinned key. Issuer and resource audience must match exactly. Expiration/not-before/issued-at are validated. `babel` scope and the exact configured subject/client pair are required. Unknown signing keys, algorithm substitution, overlong lifetime, other accounts/clients and malformed tokens fail closed. Ingress role binding and recipient claims apply identically to OAuth and static credentials.
 
 Offline signature verification cannot instantly see a provider-side logout/revocation. Short access-token lifetimes bound that window. To revoke bridge access immediately, remove its explicit principal binding from `agents.json` and recreate the gateway/worker. Worker authorization fingerprints invalidate old subscriptions when bindings change; fresh access-token issuance alone does not change subscription identity.
