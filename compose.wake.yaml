@@ -1,0 +1,33 @@
+# Opt-in overlay only after explicit callback/egress approval.
+services:
+  gateway:
+    environment:
+      BABEL_WAKE_FILE: /run/secrets/babel_wake
+    secrets: [babel_wake]
+    networks: [edge]
+  worker:
+    build: .
+    image: ${BABEL_IMAGE:-agent-babel:local}
+    command: [wake]
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 80
+    mem_limit: 256m
+    cpus: 1
+    tmpfs: ["/tmp:size=8m,mode=1777"]
+    environment:
+      BABEL_AUTH_FILE: /run/secrets/babel_agents
+      BABEL_WAKE_FILE: /run/secrets/babel_wake
+    secrets: [babel_agents, babel_wake]
+    volumes: ["babel_data:/data"]
+    networks: [edge]
+    logging:
+      driver: local
+      options: {max-size: "5m", max-file: "2"}
+secrets:
+  babel_wake:
+    file: ./secrets/wake.json

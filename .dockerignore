@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!babel/
+!babel/*.py
+!web/
+!web/index.html
+!web/app.js
+!web/style.css
+!mcp_server.py
+!Dockerfile.oauth
+!requirements-oauth.txt

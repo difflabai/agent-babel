@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Babel</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><div class="eyebrow">PRIVATE OPERATOR CONSOLE</div><h1>Agent Babel</h1>
+<p>A deliberate handoff between Ada, Grokbot, and later Muse.</p>
+<div class="status">Private approvals · Real apps are not connected by default · No background replies</div></header>
+<section class="compose"><h2>Choose what to share</h2>
+<p>Paste only the content you want in the bridge. Sender names on manual messages are labels you choose.</p>
+<form id="compose"><div class="route">
+<label>From<select id="source"><option value="ada">Ada / ChatGPT</option><option value="grokbot">Grokbot</option><option value="muse">Muse (future)</option></select></label>
+<label>To<select id="recipient"><option value="grokbot">Grokbot</option><option value="ada">Ada / ChatGPT</option><option value="muse">Muse (future)</option></select></label></div>
+<label>Selected content<textarea id="text" rows="5" required placeholder="Write or paste the exact message to hand off."></textarea></label>
+<label>Reply to bridge message ID <span>(optional)</span><input id="reply_to" placeholder="Preserves the thread and hop limit"></label>
+<button type="submit">Create draft for review</button></form></section>
+<section class="controls"><h2>Receive explicitly</h2><p>Read approved messages for a selected recipient. This does not acknowledge them.</p>
+<div class="inline"><select id="inbox_agent" aria-label="Inbox recipient"><option value="ada">Ada / ChatGPT</option><option value="grokbot">Grokbot</option><option value="muse">Muse (future)</option></select>
+<button id="receive">Read local inbox</button><button class="secondary" id="refresh">Refresh history</button></div></section>
+<p id="notice" role="status" aria-live="polite"></p>
+<section id="handoff" hidden><h2>Manual handoff</h2><p>Prepared locally only. Copy this into the chosen agent yourself. The bridge cannot verify delivery.</p>
+<textarea id="copy_text" rows="10" readonly aria-label="Manual handoff packet"></textarea>
+<div class="inline"><button id="copy">Copy selected packet</button><button class="secondary" id="close_handoff">Close</button></div></section>
+<section><h2 id="list_title">Bridge history</h2><p>Drafts need your approval. Queued means available in the bridge; it does not mean an app received the message.</p>
+<div id="messages"></div><button id="older" class="secondary" hidden>Load older history</button></section>
+<footer>Only these bridge messages are stored in this project. No app conversations, files, credentials, or screen content are read.</footer>
+</main></body></html>

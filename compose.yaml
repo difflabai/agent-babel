@@ -1,0 +1,73 @@
+name: agent-babel
+x-babel: &babel
+  build: .
+  image: ${BABEL_IMAGE:-agent-babel:local}
+  restart: unless-stopped
+  init: true
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 80
+  mem_limit: 256m
+  cpus: 1
+  stop_grace_period: 15s
+  tmpfs: ["/tmp:size=8m,mode=1777"]
+  volumes: ["babel_data:/data"]
+  logging:
+    driver: local
+    options: {max-size: "5m", max-file: "2"}
+services:
+  gateway:
+    <<: *babel
+    command: ["gateway", "--container"]
+    environment:
+      BABEL_AUTH_FILE: /run/secrets/babel_agents
+      BABEL_PUBLIC_ORIGIN: https://${BABEL_DOMAIN:?Set BABEL_DOMAIN in .env to your approved DNS hostname}
+    secrets: [babel_agents]
+    networks: [ingress]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  operator:
+    <<: *babel
+    command: ["serve", "--container"]
+    ports: ["127.0.0.1:8765:8765"]
+    network_mode: bridge
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      BABEL_DOMAIN: ${BABEL_DOMAIN:?Set BABEL_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [ingress, edge]
+    depends_on:
+      gateway: {condition: service_healthy}
+    security_opt: [no-new-privileges:true]
+    pids_limit: 80
+    mem_limit: 256m
+    logging:
+      driver: local
+      options: {max-size: "5m", max-file: "2"}
+networks:
+  ingress: {internal: true}
+  edge: {}
+volumes:
+  babel_data:
+  caddy_data:
+  caddy_config:
+secrets:
+  babel_agents:
+    file: ./secrets/agents.json

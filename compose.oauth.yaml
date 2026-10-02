@@ -1,0 +1,19 @@
+# Use after provider setup; no provider resources or credentials are created.
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.oauth
+    secrets: [babel_jwks]
+  operator:
+    build:
+      context: .
+      dockerfile: Dockerfile.oauth
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.oauth
+    secrets: [babel_jwks]
+secrets:
+  babel_jwks:
+    file: ./secrets/provider-jwks.json

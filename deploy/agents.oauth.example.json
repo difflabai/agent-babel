@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "agents": {
+    "ada": {"recipients": ["grokbot"]},
+    "grokbot": {
+      "sha256": "<replace-with-sha256-of-grok-inbound-token>",
+      "recipients": ["ada"]
+    }
+  },
+  "oauth": {
+    "issuer": "https://YOUR_TENANT.auth0.com/",
+    "resource": "https://YOUR_DOMAIN/mcp",
+    "jwks_file": "/run/secrets/babel_jwks",
+    "principals": {
+      "ada": {
+        "subject": "<actual-provider-user-sub>",
+        "client_id": "<actual-registered-chatgpt-client-azp>"
+      }
+    }
+  }
+}

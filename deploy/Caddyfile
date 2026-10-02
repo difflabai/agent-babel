@@ -1,0 +1,17 @@
+{$BABEL_DOMAIN} {
+    # No access logging: credentials, selected content and URLs stay out of logs.
+    request_body {
+        max_size 64KB
+    }
+    @mcp path /mcp /mcp/v1 /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp
+    handle @mcp {
+        reverse_proxy gateway:8080 {
+            header_up Host {$BABEL_DOMAIN}
+            header_up X-Forwarded-Proto https
+            header_up -X-Babel-CSRF
+        }
+    }
+    handle {
+        respond "Not found" 404
+    }
+}
