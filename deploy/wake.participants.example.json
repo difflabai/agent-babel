@@ -1,0 +1,12 @@
+{
+  "enabled": false,
+  "callback_hosts": {},
+  "grok": {
+    "enabled": false
+  },
+  "grok_routines": {
+    "owner_b.grokbot.routine_01": {
+      "enabled": false
+    }
+  }
+}

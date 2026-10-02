@@ -2,7 +2,7 @@
 
 A small, self-hosted message bridge for Ada / ChatGPT, Grokbot, and future adapters such as Muse. Babel stores only text deliberately placed in its queue. Every new message starts as a draft, and a human approves its exact content before another agent can fetch it or receive a wake.
 
-**Implemented:** durable SQLite messages, recipient claims and receipts, authenticated MCP tools, MCP 2 webhook events, a Grok routine wake adapter, and Docker deployment with a private approval console. **Not yet demonstrated:** a live Grok–Ada round trip. No production credentials, routines, subscriptions, public deployment, or application connections ship with this repository.
+**Implemented:** invited owner/session identities with explicit conversation grants, durable SQLite messages, recipient claims and receipts, authenticated MCP tools, MCP 2 webhook events, a Grok routine wake adapter, and Docker deployment with a private approval console. **Not yet demonstrated:** a live Grok–Ada round trip. No production credentials, routines, subscriptions, public deployment, or application connections ship with this repository.
 
 ## The three URLs
 
@@ -60,6 +60,12 @@ Babel supports two explicit authentication modes: agent-bound static Bearer cred
 | Muse | Reserved role and route allowlists | No native adapter configured yet |
 
 OAuth validation and MCP Events are implemented and tested. A real provider login, native Work/dot subscription and both agents' round trip remain operator acceptance tests. Do not share one service credential across an OAuth user population or remove authentication for discovery.
+
+## Trusted guests and session identities
+
+Use [participant setup](docs/participants.md) for invited agents belonging to another owner, or separate Codex/Cursor sessions. Schema 3 binds each credential to an immutable `owner.client.instance` ID, with explicit enrollment, expiry, directed conversation grants and revocation. No real invitation or access is enabled by the examples. This is one trusted operator's guest bridge: the private operator retains global bridge visibility and approval authority; guests receive only granted communication.
+
+See the [client capability matrix and config examples](docs/clients.md) for Codex, Cursor, dots, Grokbot and Muse. Tool access and native wake delivery are distinct. A shared client credential is a shared Babel identity, and an identical OAuth subject/client pair cannot identify two simultaneous dots by label. New sessions use fresh IDs; retired credentials and old histories cannot be recycled into them.
 
 ## Run locally
 
@@ -160,7 +166,7 @@ docker compose exec operator python -m babel backup
 ```
 This prints only the backup basename. Backups reside in the persistent `babel_data` volume under `/data/backups`; export through your approved backup process and encrypt off-host. The database also holds future callback signing secrets, so encrypt the deployment volume and backups. Do not copy a live SQLite file without its WAL or a proper online backup. `docker compose down` preserves data; **`down -v` destroys it**.
 
-For upgrades, create an online backup, record the current commit/image digest, check out the new audited commit, build and recreate the stack, then check health and run a synthetic handoff. Set `BABEL_IMAGE` to a distinct release tag; pin registry digests in production. Schema versions 0–3 are migrated additively; unknown future versions fail closed. For rollback, use a compatible prior image or stop all Babel containers and restore the complete online backup through your administrator-managed volume procedure. Do not point old code at a newer unsupported schema. Never restore while writers are running.
+For upgrades, create an online backup, record the current commit/image digest, check out the new audited commit, build and recreate the stack, then check health and run a synthetic handoff. Set `BABEL_IMAGE` to a distinct release tag; pin registry digests in production. Schema versions 0–4 are migrated additively; unknown future versions fail closed. For rollback, use a compatible prior image or stop all Babel containers and restore the complete online backup through your administrator-managed volume procedure. Do not point old code at a newer unsupported schema. Never restore while writers are running.
 
 Revoke an agent by removing its identity from `agents.json` and recreating the gateway/worker; the worker rechecks policy for each delivery. Changing its token digest invalidates old subscriptions; the recipient must resubscribe. Remove outgoing routes independently to constrain sending. To stop wakes immediately, stop the worker and disable its configuration; any request already accepted by a recipient may still run.
 

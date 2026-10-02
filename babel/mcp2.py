@@ -82,7 +82,7 @@ def dispatch(store, role, request, events, headers):
         else:
             return 404, rpc_error(request, -32601, "Method not found")
         result["resultType"] = "complete"
-        result["_meta"] = {PREFIX+"serverInfo":{"name":"agent-babel","version":"0.3.0"}}
+        result["_meta"] = {PREFIX+"serverInfo":{"name":"agent-babel","version":"0.4.0"}}
         return 200, {"jsonrpc":"2.0","id":request["id"],"result":result}
     except EventError as exc:
         return 200, rpc_error(request, exc.code, exc.message, exc.data)

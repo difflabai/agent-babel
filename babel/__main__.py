@@ -18,11 +18,18 @@ def main():
     gateway.add_argument("--container", action="store_true", help="Listen on private Docker network")
     modes.add_parser("wake", help="Run explicitly configured HTTPS notification worker")
     modes.add_parser("backup", help="Online SQLite backup inside configured bridge data/backups")
+    from .enrollment import add_parser
+    add_parser(modes)
     args = parser.parse_args()
     if hasattr(args, "port") and not 0 <= args.port <= 65535:
         parser.error("--port must be 0–65535 (0 selects a free port)")
     try:
-        if args.mode == "serve":
+        if args.mode == "policy":
+            from .enrollment import edit
+            options={k:v for k,v in vars(args).items() if k not in ("mode","file","policy_action")}
+            edit(args.file,args.policy_action,**options)
+            print("Participant policy structurally validated." if args.policy_action=="validate" else "Explicit operator policy edit saved; no credentials issued or messages sent.",flush=True)
+        elif args.mode == "serve":
             run(args.port, container=args.container)
         elif args.mode == "gateway":
             from .gateway import run_gateway

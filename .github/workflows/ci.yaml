@@ -20,6 +20,8 @@ jobs:
       - run: python -m compileall -q babel tests
       - run: node --check web/app.js
       - run: BABEL_DOMAIN=bridge.example.invalid docker compose config --quiet
+      - run: BABEL_DOMAIN=bridge.example.invalid docker compose -f compose.yaml -f compose.participants.yaml config --quiet
+      - run: BABEL_DOMAIN=bridge.example.invalid docker compose -f compose.yaml -f compose.participants.yaml -f compose.wake.yaml -f compose.participants-wake.yaml -f compose.oauth.yaml config --quiet
       - run: docker build -t agent-babel:ci .
       - run: BABEL_DOMAIN=bridge.example.invalid docker compose -f compose.yaml -f compose.wake.yaml config --quiet
       - run: BABEL_DOMAIN=bridge.example.invalid docker compose -f compose.yaml -f compose.wake.yaml -f compose.oauth.yaml config --quiet

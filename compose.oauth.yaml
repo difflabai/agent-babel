@@ -9,6 +9,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.oauth
+    secrets: [babel_jwks]
   worker:
     build:
       context: .

@@ -37,3 +37,5 @@ Offline signature verification cannot instantly see a provider-side logout/revoc
 Signed synthetic JWT tests exercise signature, issuer, audience, scope, expiry, subject, client, key selection and public metadata challenges. Docker validation proves the resource-server dependencies build. The test signing keys exist only in memory and are not production credentials. A real provider authorization-code/PKCE exchange, grant, callback subscription and both native clients are **deployment acceptance tests**, not a result claimed by mocked tests.
 
 Use the same three Compose files for ongoing operations. Keep provider/client secrets in provider-managed storage; Babel does not need an OAuth client secret or an OpenAI API key.
+
+For invited owners or multiple client/session identities, use [schema 3 participants](participants.md) and its OAuth template. Bind exact provider principals to instance IDs; duplicate subject/client pairs cannot select multiple simultaneous dots. Ordinary legacy role configuration remains supported.

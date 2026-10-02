@@ -35,6 +35,9 @@ services:
   operator:
     <<: *babel
     command: ["serve", "--container"]
+    environment:
+      BABEL_AUTH_FILE: /run/secrets/babel_agents
+    secrets: [babel_agents]
     ports: ["127.0.0.1:8765:8765"]
     network_mode: bridge
     healthcheck:

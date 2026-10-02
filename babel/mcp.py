@@ -1,4 +1,5 @@
 """Tools-only MCP 1.x: newline stdio and stateless JSON Streamable HTTP."""
+import copy
 import json
 import sys
 from .core import AGENTS, BridgeError, MAX_TEXT_BYTES, Store, agent, fields, identifier
@@ -74,18 +75,26 @@ def dispatch(store, role, request, versions=VERSIONS):
         requested = params.get("protocolVersion")
         version = requested if requested in versions else versions[0]
         result = {"protocolVersion": version, "capabilities": {"tools": {"listChanged": False}},
-                  "serverInfo": {"name": "agent-babel", "version": "0.3.0"},
+                  "serverInfo": {"name": "agent-babel", "version": "0.4.0"},
                   "instructions": INSTRUCTIONS}
     elif method == "ping":
         result = {}
     elif method == "tools/list":
-        result = {"tools": TOOLS}
+        tools=copy.deepcopy(TOOLS)
+        policy=getattr(store,"policy",None)
+        if policy and policy.multi_owner:
+            pairs=policy.visible_pairs(role)
+            stage=tools[0]["inputSchema"]
+            stage["properties"]["recipient"]={"type":"string","enum":sorted({r[2] for r in pairs if r[1]==role})}
+            stage["properties"]["conversation_id"]={"type":"string","enum":sorted({r[0] for r in pairs if r[1]==role})}
+            stage["required"].append("conversation_id")
+        result = {"tools": tools}
     elif method == "tools/call":
         try:
             fields(params, ("name", "arguments", "_meta"), ("name",))
             name, args = params["name"], params.get("arguments", {})
             if name == "stage_message":
-                fields(args, ("recipient", "text", "message_id", "reply_to"),
+                fields(args, ("recipient", "text", "message_id", "reply_to", "conversation_id"),
                        ("recipient", "text", "message_id"))
                 identifier(args["message_id"])
                 result = store.stage(role, provenance="mcp", **args)
@@ -121,6 +130,11 @@ def dispatch(store, role, request, versions=VERSIONS):
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 def stdio(role):
+    import os
+    if os.environ.get("BABEL_AUTH_FILE"):
+        from .auth import Policy
+        if Policy.load(os.environ["BABEL_AUTH_FILE"]).multi_owner:
+            raise BridgeError("Multi-owner clients must use authenticated HTTP; trusted stdio is disabled")
     store = Store()
     try:
         while True:
