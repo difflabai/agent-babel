@@ -187,7 +187,7 @@ class MCPTests(unittest.TestCase):
         self.assertNotIn("events", result["capabilities"])
         tools = self.rpc("tools/list")["result"]["tools"]
         self.assertEqual({t["name"] for t in tools},
-                         {"stage_message", "receive_messages", "acknowledge_message", "claim_message", "message_status", "bridge_history"})
+                         {"list_contacts", "stage_message", "receive_messages", "acknowledge_message", "claim_message", "message_status", "bridge_history"})
         self.assertIn("error", self.rpc("events/subscribe"))
         self.assertTrue(self.call("approve_message", {"message_id": "fake-message-001"})["isError"])
 
@@ -229,7 +229,7 @@ class MCPTests(unittest.TestCase):
                                 text=True, capture_output=True, timeout=5, check=True, env={**os.environ, "BABEL_DATA_DIR": folder})
         responses = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual([r["id"] for r in responses], [1, 2, 3])
-        self.assertEqual(len(responses[1]["result"]["tools"]), 6)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 7)
         self.assertEqual(result.stderr, "")
 
 class HTTPTests(unittest.TestCase):

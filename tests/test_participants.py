@@ -149,13 +149,33 @@ class ParticipantTests(unittest.TestCase):
     def test_tool_catalog_exposes_only_own_routes_and_no_admin_tools(self):
         tools=dispatch(self.scoped(DOT),DOT,{"jsonrpc":"2.0","id":1,"method":"tools/list"})["result"]["tools"]
         stage=tools[0]["inputSchema"]
-        self.assertEqual(stage["properties"]["recipient"]["enum"],[GUEST])
-        self.assertEqual(stage["properties"]["conversation_id"]["enum"],["chat_shared_01"])
+        self.assertNotIn("enum",stage["properties"]["recipient"])
+        self.assertNotIn("enum",stage["properties"]["conversation_id"])
+        self.assertEqual(self.scoped(DOT).contacts(DOT),[{"recipient":GUEST,"conversation_id":"chat_shared_01"}])
         self.assertIn("conversation_id",stage["required"])
         self.assertNotIn("policy",str(tools));self.assertNotIn(CODEX,str(tools))
         for name in ("approve_message","enroll_participant","run_command"):
             result=dispatch(self.scoped(GUEST),GUEST,{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":{}}})
             self.assertTrue(result["result"]["isError"])
+    def test_contact_discovery_updates_without_stale_cached_recipient_enums(self):
+        cfg=copy.deepcopy(self.cfg)
+        with tempfile.TemporaryDirectory(dir=ROOT,prefix=".test-") as folder:
+            path=Path(folder)/"participants.json";path.write_text(json.dumps(cfg))
+            original=Policy.load(path)
+            scope=ScopedStore(self.store,DOT,original.agents[DOT][1],original)
+            catalog=dispatch(scope,DOT,{"jsonrpc":"2.0","id":1,"method":"tools/list"})["result"]["tools"]
+            self.assertNotIn("enum",catalog[0]["inputSchema"]["properties"]["recipient"])
+            cfg["conversations"]["dynamic_chat_01"]={"state":"active","participants":[DOT,CODEX],"routes":[{"sender":DOT,"recipient":CODEX}]}
+            path.write_text(json.dumps(cfg))
+            fresh=Policy.load(path);fresh_scope=ScopedStore(self.store,DOT,fresh.agents[DOT][1],fresh)
+            rpc={"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_contacts","arguments":{}}}
+            contacts=json.loads(dispatch(fresh_scope,DOT,rpc)["result"]["content"][0]["text"])["contacts"]
+            self.assertIn({"recipient":CODEX,"conversation_id":"dynamic_chat_01"},contacts)
+            self.assertNotIn(SECOND,str(contacts))
+            cfg["participants"][CODEX]["state"]="closed";path.write_text(json.dumps(cfg))
+            fresh=Policy.load(path)
+            contacts=ScopedStore(self.store,DOT,fresh.agents[DOT][1],fresh).contacts(DOT)
+            self.assertNotIn(CODEX,str(contacts))
     def test_approval_uses_current_policy_not_staged_permissions(self):
         row=self.stage(approved=False)
         cfg=copy.deepcopy(self.cfg);cfg["conversations"]["chat_shared_01"]["state"]="closed"

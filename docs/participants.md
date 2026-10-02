@@ -12,6 +12,8 @@ Lifecycle: `invited` → operator-confirmed `active` → `closed` / `revoked`. I
 
 Babel cannot discover a native chat's identity. A configured credential is one Babel instance. A client configuration shared by several chats shares that instance. Use an isolated, session-specific client configuration/process and close it when finished. There is no automatic inspection of Codex/Cursor/dot conversations or client stores.
 
+For instances that open and close throughout the day, call `list_contacts` to discover currently granted recipients and conversation IDs. Participant tool schemas use strings rather than cached recipient enums, so a new peer can be contacted without reconnecting the client. Every call still validates the current route and instance lifecycle; closed or unrelated participants do not appear in contacts.
+
 ## Explicit operator setup
 
 These commands are examples for the operator, not actions performed by this repository. Use generic aliases of your choice before enrollment. Provision distinct credentials through your approved process; Babel neither generates nor delivers them. Never expose the trusted local stdio/HTTP listener or private console to guests.

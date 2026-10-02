@@ -173,6 +173,17 @@ class ScopedStore:
         if self.policy: kwargs["visibility"]=self.policy.visible_pairs(role)
         return self.store.inbox(role, **kwargs)
 
+    def contacts(self, role):
+        self.guard()
+        if role != self.role:
+            raise BridgeError("Agent identity mismatch",403)
+        if self.policy:
+            routes=self.policy.visible_pairs(role)
+        else:
+            routes=[(None,role,recipient) for recipient in sorted(self.recipients)]
+        return [{"recipient":recipient,"conversation_id":conversation}
+                for conversation,source,recipient in routes if source==role]
+
     def acknowledge(self, message_id, role, claim_id=None):
         self.guard()
         if role != self.role:

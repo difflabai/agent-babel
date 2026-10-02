@@ -21,6 +21,8 @@ def schema(properties, required=()):
 
 STRING = {"type": "string", "minLength": 8, "maxLength": 128}
 TOOLS = [
+    # Participant catalogs use strings below because clients cache tool schemas.
+    # Current route grants are enforced on every call; list_contacts discovers peers.
     {"name": "stage_message", "description": "Stage explicitly selected text for another agent. "
      "Creates a draft only; the user approves it in the local UI before it becomes receivable. "
      "Use a stable message_id for retries. Replies must reference reply_to.",
@@ -54,6 +56,10 @@ TOOLS = [
          "before": {"type": "integer", "minimum": 1}}),
      "annotations": {"readOnlyHint": True, "destructiveHint": False,
                      "idempotentHint": True, "openWorldHint": False}},
+    {"name": "list_contacts", "description": "Discover currently permitted outgoing recipients and their conversation IDs. Call again when instances join or leave; this never exposes unrelated owners or sessions.",
+     "inputSchema": schema({}),
+     "annotations": {"readOnlyHint": True, "destructiveHint": False,
+                     "idempotentHint": True, "openWorldHint": False}},
 ]
 
 def dispatch(store, role, request, versions=VERSIONS):
@@ -83,10 +89,9 @@ def dispatch(store, role, request, versions=VERSIONS):
         tools=copy.deepcopy(TOOLS)
         policy=getattr(store,"policy",None)
         if policy and policy.multi_owner:
-            pairs=policy.visible_pairs(role)
             stage=tools[0]["inputSchema"]
-            stage["properties"]["recipient"]={"type":"string","enum":sorted({r[2] for r in pairs if r[1]==role})}
-            stage["properties"]["conversation_id"]={"type":"string","enum":sorted({r[0] for r in pairs if r[1]==role})}
+            stage["properties"]["recipient"]={"type":"string","description":"A current permitted recipient from list_contacts."}
+            stage["properties"]["conversation_id"]={"type":"string","description":"The matching current conversation ID from list_contacts."}
             stage["required"].append("conversation_id")
         result = {"tools": tools}
     elif method == "tools/call":
@@ -101,6 +106,11 @@ def dispatch(store, role, request, versions=VERSIONS):
             elif name == "receive_messages":
                 fields(args, ("limit",))
                 result = {"messages": store.inbox(role, **args), "notice": "Receipt requires explicit acknowledgment."}
+            elif name == "list_contacts":
+                fields(args, ())
+                contacts=store.contacts(role) if hasattr(store,"contacts") else [
+                    {"recipient":recipient,"conversation_id":None} for recipient in AGENTS if recipient!=role]
+                result={"contacts":contacts}
             elif name == "claim_message":
                 fields(args, ("message_id", "claim_id"), ("message_id", "claim_id"))
                 result = store.claim_message(args["message_id"], role, args["claim_id"])
