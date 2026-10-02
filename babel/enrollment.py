@@ -88,6 +88,16 @@ def change(config, action, **args):
         route={"sender":args["sender"],"recipient":args["recipient"]}
         if action=="grant" and route not in conversation["routes"]: conversation["routes"].append(route)
         if action=="ungrant": conversation["routes"]=[r for r in conversation["routes"] if r!=route]
+    elif action=="approval":
+        mode=args["mode"]
+        if mode not in ("manual","automatic"): raise BridgeError("Approval must be manual or automatic")
+        cid=args.get("conversation")
+        if cid is None:
+            result["approval"]=mode
+        else:
+            conversation=result["conversations"].get(cid)
+            if not conversation or conversation["state"]!="active": raise BridgeError("Conversation is unavailable")
+            conversation["approval"]=mode
     elif action=="close-conversation":
         conversation=result["conversations"].get(args["conversation"])
         if not conversation: raise BridgeError("Conversation is unavailable")
@@ -156,3 +166,6 @@ def add_parser(modes):
         grant=actions.add_parser(name)
         for field in ("conversation","sender","recipient"): grant.add_argument("--"+field,required=True)
     actions.add_parser("close-conversation").add_argument("--conversation",required=True)
+    approval=actions.add_parser("approval")
+    approval.add_argument("--mode",required=True,choices=("manual","automatic"))
+    approval.add_argument("--conversation",help="Optional conversation override; omitted changes the policy default")

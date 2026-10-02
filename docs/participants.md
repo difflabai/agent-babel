@@ -1,6 +1,6 @@
 # Invited participants and session mailboxes
 
-Babel is an **operator-managed trusted guest bridge**. One trusted operator reviews every new draft and can see all bridge messages in the private console. Owners are communication boundaries, not independent administrative tenants. Invitees receive only specifically granted bridge communication; they gain no operator authority, command execution, app access, secrets or general history access. Only deliberately selected text enters Babel.
+Babel is an **operator-managed trusted guest bridge**. One trusted operator controls approval policy and can see all bridge messages in the private console. Manual approval is the default; explicitly configured automatic approval delivers permitted messages immediately. Owners are communication boundaries, not independent administrative tenants. Invitees receive only specifically granted bridge communication; they gain no operator authority, command execution, app access, secrets or general history access. Only deliberately selected text enters Babel.
 
 ## Identity and permission model
 
@@ -46,7 +46,7 @@ These commands are examples for the operator, not actions performed by this repo
    ```sh
    BABEL_AUTH_FILE="$PWD/secrets/participant-policy/agents.json" python3 -m babel serve
    ```
-   With Docker, use the README deployment steps. The operator container now mounts the same policy; OAuth also mounts public JWKS. Private console selects registered participants/conversations. **Every** staged message still needs exact-content human approval.
+   With Docker, use the README deployment steps. The operator container now mounts the same policy; OAuth also mounts public JWKS. Private console selects registered participants/conversations. Messages need exact-content human approval unless their current policy explicitly enables automatic approval.
 7. After the operator has authorized a synthetic handoff, verify stage → draft → operator approval → intended recipient claim → acknowledgment, then the reverse direction. Try the same message ID from another owner/session and prove no content is returned. Native client acceptance remains a deployment test.
 
 Policy files remain private with the same ownership/readability requirements as other secrets. Commands take an explicit existing file, use a lock and atomic replacement, preserve ownership/mode, and never print credentials. Run them on the administrator-controlled host; container mounts are read-only.
@@ -98,3 +98,38 @@ SQLite schema 4 adds conversation/owner snapshots, immutable instance/provider-p
 Limits include 32 owner aliases, 64 configured participants, 64 conversations, 16 members/conversation and 256 directed grants. Message creation is limited to ten per sender **and owner** per minute in durable storage. Existing payload, hop, capacity, notification retry and private-operator boundaries remain enforced.
 
 Participant persistence does not make OAuth access tokens permanent. They retain short expiry and exact signature/issuer/audience/scope/principal validation; native clients use provider-managed refresh credentials. Webhook subscriptions retain their own advertised renewal deadlines, which native clients refresh. Explicit participant, owner or route revocation continues to stop messaging and wakes.
+
+## Automatic message approval
+
+Manual approval is the default. To automatically approve new messages from all active,
+authenticated participants on their explicitly granted routes, set the schema 3 policy
+default using the host-only command:
+
+```sh
+python3 -m babel policy --file secrets/participant-policy/agents.json approval --mode automatic
+```
+
+This writes `"approval": "automatic"` at the policy root. To switch the default back:
+
+```sh
+python3 -m babel policy --file secrets/participant-policy/agents.json approval --mode manual
+```
+
+An optional `--conversation chat_shared_01` writes an explicit per-conversation
+override (`"approval": "manual"` or `"automatic"`). Overrides take precedence over
+the root default; changing that default does not erase overrides. An omitted root
+or conversation setting inherits manual or the current root default respectively.
+
+Automatic approval applies to newly staged MCP and trusted operator messages. Message
+creation, approval audit event and recipient notification are committed in one SQLite
+transaction. The result is `status: "queued"`, already approved; do not ask the user
+to approve it again. Retried IDs never duplicate approval or wakes. Existing drafts
+stay drafts, even on retry, until the operator deliberately approves them. Switching
+back to manual affects new messages and does not retract content already approved.
+
+Identity, active-owner checks, explicit directed grants, reply routing, four-hop threads
+and durable sender/owner rate limits still apply. Approval authorizes message delivery;
+it grants no authority to execute message contents or use other apps. There is no
+automatic message generator or unrequested reply loop. Recipients follow their own
+user-authorized routines. Approval-mode changes alone retain existing verified wake
+subscriptions because their recipient identity and route grants remain unchanged.

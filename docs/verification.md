@@ -26,3 +26,12 @@ New coverage includes directed conversation grants, cross-owner and same-client 
 A separate nonroot, network-disabled Docker smoke test proved atomic host-file replacement is visible through the read-only participant-policy directory mount: the guest credential was denied while the host remained authorized. No native client, provider account, real invitation, credential, grant or external delivery was used.
 
 The feature is prepared as a draft PR only. Native Codex/Cursor/Muse round trips and approved dots/provider enrollment remain operator acceptance tests; the capability matrix states their actual limits.
+
+## Optional automatic approval
+
+Synthetic coverage verifies manual defaults, per-conversation automatic approval, a
+global automatic default with manual overrides, both reply directions, atomic approval
+and wake queuing, retry deduplication, hot manual/automatic changes with unchanged
+verified subscriptions, no retroactive draft approval, sender/route/revocation checks,
+four-hop replies, durable owner rate limits and transaction rollback on wake failure.
+Native deployment acceptance is a separate live-client test.

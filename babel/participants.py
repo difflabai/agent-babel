@@ -19,8 +19,11 @@ def digest(value):
 
 def configure(policy, config, oauth_roles):
     from .auth import DIGEST
-    fields(config,("schema_version","owners","participants","conversations"),
+    fields(config,("schema_version","owners","participants","conversations","approval"),
            ("schema_version","owners","participants","conversations"))
+    approval=config.get("approval","manual")
+    if approval not in ("manual","automatic"):
+        raise BridgeError("Approval must be manual or automatic")
     owners=config["owners"]; participants=config["participants"]; conversations=config["conversations"]
     if not isinstance(owners,dict) or not 1<=len(owners)<=32:
         raise BridgeError("Policy needs 1–32 explicitly configured owners")
@@ -60,7 +63,9 @@ def configure(policy, config, oauth_roles):
     for cid, entry in conversations.items():
         from .core import identifier
         identifier(cid)
-        fields(entry,("state","participants","routes"),("state","participants","routes"))
+        fields(entry,("state","participants","routes","approval"),("state","participants","routes"))
+        if entry.get("approval","manual") not in ("manual","automatic"):
+            raise BridgeError("Conversation approval must be manual or automatic")
         members=entry["participants"]
         if (entry["state"] not in ("active","closed","revoked") or not isinstance(members,list)
                 or not 2<=len(members)<=16 or any(not isinstance(x,str) or x not in participants for x in members)
@@ -76,6 +81,7 @@ def configure(policy, config, oauth_roles):
             if entry["state"]=="active": routes.add((cid,*pair))
     if len(routes)>256: raise BridgeError("At most 256 explicit routes may be configured")
     policy.multi_owner=True; policy.owners=owners; policy.participants=participants
+    policy.approval_mode=approval
     policy.conversations=conversations; policy.routes=frozenset(routes); policy.agents={}
     for pid, entry in participants.items():
         permissions=sorted(r for r in routes if pid in r[1:])

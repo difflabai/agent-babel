@@ -216,6 +216,10 @@ class Store:
                 (message_id, source, recipient, text, reply_to, root_id, hops, provenance, now))
             self.db.execute("UPDATE messages SET conversation_id=?,source_owner=?,recipient_owner=? WHERE id=?",(conversation_id,source_owner,recipient_owner,message_id))
             self._event(message_id, "staged", provenance + ":" + source)
+            if policy and policy.auto_approves(conversation_id,source,recipient):
+                self.db.execute("UPDATE messages SET status='queued',approved=? WHERE id=?",(now,message_id))
+                self._event(message_id,"approved","automatic:"+conversation_id)
+                self._queue_wakes(self._row(message_id))
             return {"message": self._row(message_id), "duplicate": False}
 
     def approve(self, message_id):
