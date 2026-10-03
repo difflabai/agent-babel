@@ -98,6 +98,11 @@ def change(config, action, **args):
             conversation=result["conversations"].get(cid)
             if not conversation or conversation["state"]!="active": raise BridgeError("Conversation is unavailable")
             conversation["approval"]=mode
+    elif action=="hop-limit":
+        conversation=result["conversations"].get(args["conversation"])
+        if not conversation or conversation["state"]!="active":
+            raise BridgeError("Conversation is unavailable")
+        conversation["max_hops"]=args["max_hops"]
     elif action=="close-conversation":
         conversation=result["conversations"].get(args["conversation"])
         if not conversation: raise BridgeError("Conversation is unavailable")
@@ -169,3 +174,6 @@ def add_parser(modes):
     approval=actions.add_parser("approval")
     approval.add_argument("--mode",required=True,choices=("manual","automatic"))
     approval.add_argument("--conversation",help="Optional conversation override; omitted changes the policy default")
+    hops=actions.add_parser("hop-limit",help="Set only one conversation's hop cap; others default to four")
+    hops.add_argument("--conversation",required=True)
+    hops.add_argument("--max-hops",required=True,type=int)

@@ -7,7 +7,7 @@ import secrets
 import threading
 import time
 from urllib.parse import urlsplit
-from .core import AGENTS, BridgeError, fields
+from .core import AGENTS, BridgeError, fields, MAX_HOPS
 
 TOKEN = re.compile(r"[A-Za-z0-9_-]{32,256}\Z")
 DIGEST = re.compile(r"[a-f0-9]{64}\Z")
@@ -109,6 +109,19 @@ class Policy:
         self.assert_route(conversation,source,recipient)
         return (self.multi_owner and
                 self.conversations[conversation].get("approval",self.approval_mode)=="automatic")
+
+    def hop_limit(self, conversation):
+        if not self.multi_owner:
+            return MAX_HOPS
+        if conversation not in self.conversations:
+            raise BridgeError("Conversation is unavailable",403)
+        return self.conversations[conversation].get("max_hops", MAX_HOPS)
+
+    def event_hop_limit(self, role):
+        # Only currently permitted incoming conversations affect this recipient's schema.
+        incoming = [self.hop_limit(cid) for cid, source, recipient in self.visible_pairs(role)
+                    if recipient == role]
+        return max(incoming, default=MAX_HOPS)
 
     def check_row(self, row):
         self.assert_route(row.get("conversation_id"),row["source"],row["recipient"])

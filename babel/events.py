@@ -7,7 +7,7 @@ import re
 import secrets
 import time
 from urllib.parse import urlsplit
-from .core import AGENTS, BridgeError, fields
+from .core import AGENTS, BridgeError, fields, MAX_HOPS
 from .wake import CallbackError, WebhookTransport, key_bytes, signed_headers, GrokWebhookAdapter
 
 EVENT_NAME = "babel.message.approved"
@@ -24,14 +24,14 @@ def canonical(value):
 def identity(role, url, name, arguments):
     return "sub_" + hashlib.sha256(canonical([role, url, name, arguments]).encode("utf-8")).hexdigest()
 
-def definition(role):
+def definition(role, max_hops=MAX_HOPS):
     return {"name": EVENT_NAME, "description": "An operator-approved bridge message is available for this recipient.",
             "delivery": ["webhook"],
             "inputSchema": {"type": "object", "properties": {"recipient": {"type": "string", "enum": [role]}},
                             "required": ["recipient"], "additionalProperties": False},
             "payloadSchema": {"type": "object", "properties": {
                 "message_id": {"type": "string"}, "recipient": {"type": "string"},
-                "root_id": {"type": "string"}, "hops": {"type": "integer", "minimum": 1, "maximum": 4}},
+                "root_id": {"type": "string"}, "hops": {"type": "integer", "minimum": 1, "maximum": max_hops}},
                 "required": ["message_id", "recipient", "root_id", "hops"], "additionalProperties": False}}
 
 class EventError(Exception):
