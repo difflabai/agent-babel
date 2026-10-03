@@ -127,9 +127,33 @@ to approve it again. Retried IDs never duplicate approval or wakes. Existing dra
 stay drafts, even on retry, until the operator deliberately approves them. Switching
 back to manual affects new messages and does not retract content already approved.
 
-Identity, active-owner checks, explicit directed grants, reply routing, four-hop threads
+Identity, active-owner checks, explicit directed grants, reply routing, configured hop caps
 and durable sender/owner rate limits still apply. Approval authorizes message delivery;
 it grants no authority to execute message contents or use other apps. There is no
 automatic message generator or unrequested reply loop. Recipients follow their own
 user-authorized routines. Approval-mode changes alone retain existing verified wake
 subscriptions because their recipient identity and route grants remain unchanged.
+
+## Per-conversation hop limits
+
+Threads default to four messages, including the first message as hop 1. A schema 3
+conversation may explicitly set `"max_hops"` to an integer from 1 through 100.
+Only that conversation changes; legacy policies and conversations that omit it
+remain capped at four. The host-only operator command requires a conversation:
+
+```sh
+python3 -m babel policy --file secrets/participant-policy/agents.json hop-limit \
+  --conversation chat_shared_01 --max-hops 100
+```
+
+Replies still reverse the parent route and cannot change conversation. Existing
+messages remain intact. Lowering a cap blocks new replies beyond it without
+deleting prior messages. Identity, grants, approval behavior, durable sender/owner
+rate limits, capacity limits, and retry limits are unchanged. Changing only this
+cap retains verified subscriptions because identity and grants remain unchanged.
+
+`events/list` advertises the highest effective cap across the recipient's currently
+permitted incoming conversations, so accepted longer threads produce valid event
+payloads. This metadata is not permission to exceed another conversation's cap.
+Clients may need to refresh cached event discovery after an operator changes the
+setting. A higher cap does not create an automatic reply loop; use bounded tests.

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 AGENTS = ("ada", "grokbot", "muse")
 MAX_TEXT_BYTES = 16384
 MAX_HOPS = 4
+MAX_CONFIGURED_HOPS = 100
 RATE_LIMIT = 10
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}\Z")
 
@@ -201,7 +202,8 @@ class Store:
                 if parent["recipient"] != source or parent["source"] != recipient:
                     raise BridgeError("A reply must reverse the parent route", 409)
                 hops, root_id = parent["hops"] + 1, parent["root_id"]
-            if hops > MAX_HOPS:
+            hop_limit = policy.hop_limit(conversation_id) if policy else MAX_HOPS
+            if hops > hop_limit:
                 raise BridgeError("Thread hop limit reached; stop and ask the user", 409)
             now = time.time()
             count = self.db.execute("SELECT COUNT(*) FROM messages WHERE source=? AND created>?",

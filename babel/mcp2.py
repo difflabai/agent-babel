@@ -74,7 +74,7 @@ def dispatch(store, role, request, events, headers):
             fields(params, ("_meta", "cursor"))
             if params.get("cursor") is not None:
                 raise BridgeError("No additional event pages")
-            result = {"events":[definition(role)]}
+            result = {"events":[definition(role, events.policy.event_hop_limit(role))]}
         elif method == "events/subscribe":
             result = events.subscribe(role, params)
         elif method == "events/unsubscribe":

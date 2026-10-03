@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 import time
-from .core import AGENTS, BridgeError, fields
+from .core import AGENTS, BridgeError, fields, MAX_HOPS, MAX_CONFIGURED_HOPS
 
 COMPONENT = re.compile(r"[a-z][a-z0-9_-]{0,31}\Z")
 CLIENTS = ("dots","grokbot","codex","cursor","claude","opencode","muse")
@@ -63,7 +63,10 @@ def configure(policy, config, oauth_roles):
     for cid, entry in conversations.items():
         from .core import identifier
         identifier(cid)
-        fields(entry,("state","participants","routes","approval"),("state","participants","routes"))
+        fields(entry,("state","participants","routes","approval","max_hops"),("state","participants","routes"))
+        max_hops = entry.get("max_hops", MAX_HOPS)
+        if type(max_hops) is not int or not 1 <= max_hops <= MAX_CONFIGURED_HOPS:
+            raise BridgeError("Conversation max_hops must be an integer from 1 to 100")
         if entry.get("approval","manual") not in ("manual","automatic"):
             raise BridgeError("Conversation approval must be manual or automatic")
         members=entry["participants"]
