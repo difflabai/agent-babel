@@ -136,10 +136,13 @@ subscriptions because their recipient identity and route grants remain unchanged
 
 ## Per-conversation hop limits
 
-Threads default to four messages, including the first message as hop 1. A schema 3
+Threads default to 100 messages across all policy schemas, including the first
+message as hop 1. A schema 3
 conversation may explicitly set `"max_hops"` to an integer from 1 through 100.
 Only that conversation changes; legacy policies and conversations that omit it
-remain capped at four. The host-only operator command requires a conversation:
+inherit the global 100-hop default. Existing explicit per-conversation caps
+remain supported for compatibility; no override is needed to allow 100 hops.
+The host-only override command requires a conversation:
 
 ```sh
 python3 -m babel policy --file secrets/participant-policy/agents.json hop-limit \

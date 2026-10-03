@@ -13,7 +13,7 @@ import uuid
 ROOT = Path(__file__).resolve().parent.parent
 AGENTS = ("ada", "grokbot", "muse")
 MAX_TEXT_BYTES = 16384
-MAX_HOPS = 4
+MAX_HOPS = 100
 MAX_CONFIGURED_HOPS = 100
 RATE_LIMIT = 10
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}\Z")
