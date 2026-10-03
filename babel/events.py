@@ -205,7 +205,10 @@ class EventService:
             self.store.db.execute("UPDATE outbox SET status='dead',last_error='attempt_limit' WHERE status='leased' AND lease_until<=? AND attempts>=?", (now, MAX_ATTEMPTS))
             self.store.db.execute("UPDATE outbox SET status='pending',lease_token=NULL WHERE status='leased' AND lease_until<=? AND attempts<?", (now, MAX_ATTEMPTS))
             row = self.store.db.execute("""SELECT o.* FROM outbox o JOIN subscriptions s ON s.id=o.subscription_id
-                WHERE o.status='pending' AND o.next_attempt<=? ORDER BY o.seq LIMIT 1""", (now,)).fetchone()
+                WHERE o.status='pending' AND o.next_attempt<=?
+                AND NOT EXISTS (SELECT 1 FROM message_claims c WHERE c.message_id=o.message_id
+                    AND c.completed=0 AND c.expires>?)
+                ORDER BY o.seq LIMIT 1""", (now, now)).fetchone()
             if not row:
                 return None
             lease = secrets.token_hex(16)  # ephemeral work lease, no credential
@@ -221,6 +224,17 @@ class EventService:
         with self.store.lock:
             subscription = self.store.db.execute("SELECT * FROM subscriptions WHERE id=?", (row["subscription_id"],)).fetchone()
             message = self.store._row(row["message_id"])
+            busy = self.store.db.execute("SELECT expires FROM message_claims WHERE message_id=? AND completed=0 AND expires>?",
+                                         (row["message_id"], time.time())).fetchone()
+        if busy and message["status"] == "queued":
+            # A recipient may claim after the notification lease is acquired.
+            # Defer without consuming a delivery attempt; expiry makes it due again.
+            with self.store.transaction():
+                self.store.db.execute("""UPDATE outbox SET status='pending',next_attempt=?,attempts=attempts-1,
+                    last_error='recipient_busy',lease_token=NULL,lease_until=NULL
+                    WHERE seq=? AND status='leased' AND lease_token=?""",
+                    (busy["expires"], row["seq"], row["lease_token"]))
+            return True
         s = dict(subscription)
         current = self.policy.agents.get(s["role"])
         if (not s["active"] or s["expires"] <= time.time() or not current or current[0] != s["auth_digest"]

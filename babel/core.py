@@ -255,8 +255,10 @@ class Store:
         with self.lock:
             clause,args=self.visible_sql(visibility)
             return [dict(r) for r in self.db.execute(
-                "SELECT * FROM messages WHERE recipient=? AND status='queued'"+clause+" ORDER BY seq LIMIT ?",
-                [recipient,*args,limit])]
+                "SELECT * FROM messages WHERE recipient=? AND status='queued'"
+                " AND NOT EXISTS (SELECT 1 FROM message_claims c WHERE c.message_id=messages.id"
+                " AND c.completed=0 AND c.expires>?)"+clause+" ORDER BY seq LIMIT ?",
+                [recipient,time.time(),*args,limit])]
 
     def history(self, role=None, limit=100, before=None, visibility=None):
         if role is not None:

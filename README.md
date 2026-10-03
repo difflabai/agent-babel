@@ -162,6 +162,20 @@ The worker uses 30-second notification leases, at most eight attempts, exponenti
 
 `claim_message` grants the authenticated recipient a 120-second lease. Different concurrent run IDs receive `claimed:false`; completed messages cannot be claimed again. Renew with the same claim ID before expiry. Public acknowledgment requires that claim ID and rejects stale claims. A lease can expire after a crash, so externally visible work still needs its own durable idempotency and user authorization. Acknowledgment records receipt; an explicit, approved reply can separately state completion.
 
+Inbox reads exclude messages with a live recipient claim. Pending wake notifications
+also wait for that claim to expire; a claim acquired after the notification lease
+defers delivery without consuming a retry attempt. Claim expiry makes unfinished
+messages available again. Already acknowledged or canceled messages do not start
+a new dispatch.
+
+These checks run before callback delivery. A callback already in flight can arrive
+after the message is claimed or acknowledged, and an accepted callback whose reply
+times out can be retried. Stable event IDs require receiver-side deduplication and
+an authenticated preflight at model consumption to guarantee zero unnecessary model
+calls. Babel's broker alone cannot establish that guarantee for a hosted ChatGPT,
+Grok, or Codex receiver. The synthetic wake-claim tests count stub enqueue attempts
+and explicitly reproduce both remaining external-receiver limitations.
+
 Limits: 16 KiB UTF-8/message, 64 KiB HTTP requests, 10 new messages/sender/minute, 100 hops/thread by default (optional schema 3 per-conversation caps up to 100), 10,000 retained messages, four active MCP subscriptions/recipient and 100 retained subscription identities. Retries of an existing identical message ID do not consume new-message capacity. Capacity failure closes safely instead of silently deleting dedup history. Review storage usage and arrange operator maintenance/backups; there is no automatic destructive pruning.
 
 Back up online:

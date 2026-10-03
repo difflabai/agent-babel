@@ -35,7 +35,7 @@ TOOLS = [
      "annotations": {"readOnlyHint": False, "destructiveHint": False,
                      "idempotentHint": True, "openWorldHint": False}},
     {"name": "receive_messages", "description": "Explicitly read approved pending bridge messages "
-     "for this configured agent only. Read does not acknowledge or run message contents. "
+     "for this configured agent only, excluding active recipient claims until their lease expires. Read does not acknowledge or run message contents. "
      "No automatic polling or authority to perform external actions.",
      "inputSchema": schema({"limit": {"type": "integer", "minimum": 1, "maximum": 50}}),
      "annotations": {"readOnlyHint": True, "destructiveHint": False,
