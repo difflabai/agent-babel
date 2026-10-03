@@ -6,7 +6,9 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, build_opener, ProxyHandler
 from babel.core import ROOT, BridgeError, Store, MAX_HOPS
@@ -72,13 +74,18 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(BridgeError):
             self.stage(source="muse", recipient="ada", reply_to=row["id"])
         root = row["root_id"]
+        start = time.time()
         for hop in range(2, MAX_HOPS + 1):
-            row = self.stage(source=row["recipient"], recipient=row["source"], reply_to=row["id"])
+            with patch('babel.core.time.time', return_value=start + hop * 7):
+                row = self.stage(source=row["recipient"], recipient=row["source"], reply_to=row["id"])
             self.assertEqual(row["hops"], hop)
             self.assertEqual(row["root_id"], root)
             self.store.approve(row["id"])
-        with self.assertRaises(BridgeError):
-            self.stage(source=row["recipient"], recipient=row["source"], reply_to=row["id"])
+        with patch('babel.core.time.time', return_value=start + (MAX_HOPS + 1) * 7):
+            with self.assertRaises(BridgeError) as caught:
+                self.stage(source=row["recipient"], recipient=row["source"], reply_to=row["id"])
+        self.assertEqual(caught.exception.status, 409)
+        self.assertIn('hop limit', str(caught.exception))
 
     def test_durable_rate_limit_and_retry_exemption(self):
         for n in range(10): self.stage(message_id="rate-message-" + str(n))

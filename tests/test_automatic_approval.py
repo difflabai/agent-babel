@@ -3,6 +3,7 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from babel.auth import Policy, ScopedStore
@@ -72,13 +73,19 @@ class AutomaticApprovalTests(unittest.TestCase):
         self.cfg['participants'][GUEST]['state']='revoked'
         with self.assertRaises(BridgeError):self.stage(Policy(self.cfg))
         self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM messages').fetchone()[0],0)
-    def test_automatic_reply_chain_still_stops_at_four_hops(self):
+    def test_automatic_reply_chain_stops_at_global_hundred_hop_cap(self):
         self.cfg['approval']='automatic';policy=Policy(self.cfg)
         row=self.stage(policy)['message'];source,recipient=GUEST,DOT
+        self.assertEqual(MAX_HOPS,100)
+        start=time.time()
         for hop in range(2,MAX_HOPS+1):
-            row=self.stage(policy,source,recipient,mid='automatic-hop-'+str(hop).zfill(8),parent=row['id'])['message']
+            with patch('babel.core.time.time',return_value=start+hop*7):
+                row=self.stage(policy,source,recipient,mid='automatic-hop-'+str(hop).zfill(8),parent=row['id'])['message']
             self.assertEqual(row['status'],'queued');source,recipient=recipient,source
-        with self.assertRaises(BridgeError):self.stage(policy,source,recipient,mid='automatic-hop-denied',parent=row['id'])
+        with patch('babel.core.time.time',return_value=start+(MAX_HOPS+1)*7):
+            with self.assertRaises(BridgeError) as caught:self.stage(policy,source,recipient,mid='automatic-hop-denied',parent=row['id'])
+        self.assertEqual(caught.exception.status,409)
+        self.assertIn('hop limit',str(caught.exception))
         self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM messages').fetchone()[0],MAX_HOPS)
     def test_global_auto_approval_keeps_durable_owner_rate_limit(self):
         self.cfg['approval']='automatic';policy=Policy(self.cfg)
