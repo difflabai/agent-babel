@@ -197,6 +197,13 @@ class MachineTests(unittest.TestCase):
             store = Store(path)
             p = Policy(fixture()); store.sync_policy(p)
             store.policy_provider = lambda: p
+            now = time.time()
+            store.db.execute('''INSERT INTO subscriptions
+                (id,role,url,secret,auth_digest,expires,verified_until,active,created,kind)
+                VALUES(?,?,?,?,?,?,?,?,?,?)''', ('migration-subscription',GROK,
+                'https://grok.example.com/synthetic-callback','public-synthetic-callback-secret',
+                p.agents[GROK][0],now+3600,now+3600,1,now,'mcp'))
+            store.db.commit()
             scoped = ScopedStore(store, CODEX, p.agents[CODEX][1], p)
             row = scoped.stage(CODEX, GROK, text="synthetic retained history", message_id="migration-message-01", conversation_id="chat_private_01")["message"]
             store.approve(row["id"])
@@ -205,6 +212,8 @@ class MachineTests(unittest.TestCase):
             recipient.acknowledge(row["id"],GROK,"migration-claim-01")
             tables = ("messages","events","message_claims","subscriptions","outbox","participant_bindings","credential_bindings","oauth_bindings")
             before = {t:[dict(r) for r in store.db.execute("SELECT * FROM "+t)] for t in tables}
+            self.assertEqual(len(before['subscriptions']),1)
+            self.assertEqual(len(before['outbox']),1)
             store.close()
             db = sqlite3.connect(path)
             for t in ("machine_session_bindings","machine_credential_bindings","machine_bindings"):
