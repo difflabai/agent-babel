@@ -80,6 +80,19 @@ class WakeClaimTests(unittest.TestCase):
         self.service.process_one()
         self.assertEqual(self.turns,0)
         self.assertEqual(self.store.inbox('ada'),[])
+        record=self.store.db.execute('SELECT status,last_error,lease_token,lease_until FROM outbox').fetchone()
+        self.assertEqual(tuple(record),('canceled','already_acknowledged',None,None))
+    def test_acknowledgment_after_notification_lease_cancels_unused_wake(self):
+        row=self.message();original=self.service.claim
+        def lease(now=None):
+            notification=original(now)
+            self.store.claim_message(row['id'],'ada','synthetic-ack-race-claim')
+            self.store.acknowledge_claim(row['id'],'ada','synthetic-ack-race-claim')
+            return notification
+        with patch.object(self.service,'claim',side_effect=lease):
+            self.assertTrue(self.service.process_one())
+        self.assertEqual(self.turns,0)
+        self.assertEqual(self.store.wake_status()['notifications'],{'canceled':1})
     def test_duplicate_outbox_insert_and_reconnect_one_turn(self):
         row=self.message()
         with self.store.transaction():

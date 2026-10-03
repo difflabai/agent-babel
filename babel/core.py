@@ -15,7 +15,8 @@ AGENTS = ("ada", "grokbot", "muse")
 MAX_TEXT_BYTES = 16384
 MAX_HOPS = 100
 MAX_CONFIGURED_HOPS = 100
-RATE_LIMIT = 10
+RATE_LIMIT = 30
+OWNER_RATE_LIMIT = 300
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}\Z")
 
 class BridgeError(Exception):
@@ -208,10 +209,12 @@ class Store:
             now = time.time()
             count = self.db.execute("SELECT COUNT(*) FROM messages WHERE source=? AND created>?",
                                     (source, now - 60)).fetchone()[0]
-            if source_owner:
-                count=max(count,self.db.execute("SELECT COUNT(*) FROM messages WHERE source_owner=? AND created>?",(source_owner,now-60)).fetchone()[0])
             if count >= RATE_LIMIT:
-                raise BridgeError("Sender rate limit: 10 new messages per minute", 429)
+                raise BridgeError(f"Sender rate limit: {RATE_LIMIT} new messages per minute", 429)
+            if source_owner:
+                owner_count=self.db.execute("SELECT COUNT(*) FROM messages WHERE source_owner=? AND created>?",(source_owner,now-60)).fetchone()[0]
+                if owner_count >= OWNER_RATE_LIMIT:
+                    raise BridgeError(f"Owner rate limit: {OWNER_RATE_LIMIT} new messages per minute", 429)
             self.db.execute("""INSERT INTO messages
                 (id,source,recipient,text,reply_to,root_id,hops,status,provenance,created)
                 VALUES(?,?,?,?,?,?,?,'draft',?,?)""",

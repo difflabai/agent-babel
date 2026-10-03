@@ -36,7 +36,7 @@ class ConversationHopTests(unittest.TestCase):
         latest = self.store.db.execute('SELECT MAX(created) FROM messages').fetchone()[0]
         start = max(time.time(), latest or 0)
         for hop in range(1, cap + 1):
-            # Respect the unchanged durable ten-per-owner/minute limit.
+            # Space chain traffic so rate limits do not obscure hop boundaries.
             with patch('babel.core.time.time', return_value=start + hop * 7):
                 row = self.stage(policy, source, recipient, cid, prefix + '-%03d' % hop,
                                  row['id'] if row else None)
@@ -115,6 +115,7 @@ class ConversationHopTests(unittest.TestCase):
         self.assertEqual(set(payload), set(schema['required']))
         self.assertLessEqual(payload['hops'], schema['properties']['hops']['maximum'])
 
+    @patch('babel.core.OWNER_RATE_LIMIT', RATE_LIMIT)
     def test_higher_limit_retains_owner_rate_limit_and_route_controls(self):
         self.cfg['conversations']['chat_shared_01']['max_hops'] = 100
         policy = Policy(self.cfg)
