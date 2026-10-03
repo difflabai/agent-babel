@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, build_opener, ProxyHandler
-from babel.core import ROOT, BridgeError, Store, MAX_HOPS
+from babel.core import ROOT, BridgeError, Store, MAX_HOPS, RATE_LIMIT
 from babel.adapters import LIVE_ADAPTERS, ManualAdapter, MockAdapter
 from babel.mcp import dispatch
 from babel.server import Server
@@ -88,7 +88,7 @@ class StoreTests(unittest.TestCase):
         self.assertIn('hop limit', str(caught.exception))
 
     def test_durable_rate_limit_and_retry_exemption(self):
-        for n in range(10): self.stage(message_id="rate-message-" + str(n))
+        for n in range(RATE_LIMIT): self.stage(message_id="rate-message-" + str(n))
         self.assertTrue(self.store.stage("ada", "grokbot", "user-selected text",
                                        message_id="rate-message-0")["duplicate"])
         with self.assertRaises(BridgeError) as error: self.stage()
@@ -131,7 +131,7 @@ class StoreTests(unittest.TestCase):
             first = Store(db)
             row = first.stage("ada", "grokbot", "restart test", message_id="persist-message-001")["message"]
             first.approve(row["id"])
-            for n in range(9):
+            for n in range(RATE_LIMIT - 1):
                 first.stage("ada", "grokbot", "rate persists", message_id="persist-rate-" + str(n))
             first.close()
             second = Store(db)

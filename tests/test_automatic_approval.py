@@ -87,6 +87,7 @@ class AutomaticApprovalTests(unittest.TestCase):
         self.assertEqual(caught.exception.status,409)
         self.assertIn('hop limit',str(caught.exception))
         self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM messages').fetchone()[0],MAX_HOPS)
+    @patch('babel.core.OWNER_RATE_LIMIT', RATE_LIMIT)
     def test_global_auto_approval_keeps_durable_owner_rate_limit(self):
         self.cfg['approval']='automatic';policy=Policy(self.cfg)
         for i in range(RATE_LIMIT):self.stage(policy,mid='automatic-rate-'+str(i).zfill(8))

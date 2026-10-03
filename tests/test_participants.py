@@ -7,10 +7,11 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, build_opener, ProxyHandler
 from babel.auth import Policy, ScopedStore
-from babel.core import Store, ROOT, BridgeError
+from babel.core import Store, ROOT, BridgeError, RATE_LIMIT, OWNER_RATE_LIMIT
 from babel.enrollment import change, edit
 from babel.events import EventService, EventError, EVENT_NAME
 from babel.gateway import Gateway
@@ -172,11 +173,47 @@ class ParticipantTests(unittest.TestCase):
         cfg2=copy.deepcopy(cfg);cfg2["participants"][SECOND]["sha256"]=hashlib.sha256(TOKENS[GUEST].encode()).hexdigest()
         with self.assertRaises(BridgeError):self.replace_policy(cfg2)
     def test_owner_rate_budget_is_not_bypassed_by_more_sessions(self):
-        for n in range(10):
-            self.stage(source=CODEX,recipient=GROK,cid="chat_private_01",mid="owner-rate-message-"+str(n),approved=False)
-        with self.assertRaises(BridgeError) as exc:
-            self.stage(source=SECOND,recipient=GUEST,cid="chat_second_01",mid="owner-rate-message-extra",approved=False)
-        self.assertEqual(exc.exception.status,429)
+        cfg=copy.deepcopy(self.cfg)
+        senders=[(CODEX,"chat_private_01")]
+        for n in range(1, (OWNER_RATE_LIMIT + RATE_LIMIT - 1) // RATE_LIMIT):
+            pid="owner_a.codex.budget_"+str(n)
+            cfg["participants"][pid]={**cfg["participants"][CODEX],"session":"budget_"+str(n),
+                "sha256":hashlib.sha256(("public-synthetic-budget-"+str(n)).encode()).hexdigest()}
+            cid="chat_budget_"+str(n).zfill(2)
+            cfg["conversations"][cid]={"state":"active","participants":[pid,GROK],
+                "routes":[{"sender":pid,"recipient":GROK},{"sender":GROK,"recipient":pid}]}
+            senders.append((pid,cid))
+        self.replace_policy(cfg)
+        with patch('babel.core.time.time',return_value=time.time()):
+            for n in range(OWNER_RATE_LIMIT):
+                source,cid=senders[n // RATE_LIMIT]
+                self.stage(source=source,recipient=GROK,cid=cid,mid="owner-rate-message-"+str(n),approved=False)
+            # A sender with an unused allowance cannot bypass the shared budget.
+            with self.assertRaises(BridgeError) as exc:
+                self.stage(source=SECOND,recipient=GUEST,cid="chat_second_01",mid="owner-rate-message-extra",approved=False)
+            self.assertEqual(exc.exception.status,429)
+            self.assertIn("Owner rate limit",str(exc.exception))
+            self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM messages').fetchone()[0],OWNER_RATE_LIMIT)
+            # Retries remain idempotent at the ceiling; another owner can reply.
+            self.assertTrue(self.scoped(CODEX).stage(CODEX,GROK,text="selected synthetic content",
+                message_id="owner-rate-message-0",conversation_id="chat_private_01")["duplicate"])
+            self.stage(source=GROK,recipient=CODEX,cid="chat_private_01",mid="other-owner-still-allowed",approved=False)
+
+    def test_sender_budget_does_not_block_another_session_and_window_expires(self):
+        now=time.time()
+        with patch('babel.core.time.time',return_value=now):
+            for n in range(RATE_LIMIT):
+                self.stage(source=CODEX,recipient=GROK,cid="chat_private_01",mid="sender-budget-"+str(n),approved=False)
+            with self.assertRaises(BridgeError) as exc:
+                self.stage(source=CODEX,recipient=GROK,cid="chat_private_01",mid="sender-budget-extra",approved=False)
+            self.assertEqual(exc.exception.status,429)
+            self.assertIn("Sender rate limit",str(exc.exception))
+            self.stage(source=SECOND,recipient=GUEST,cid="chat_second_01",mid="other-session-allowed",approved=False)
+        with patch('babel.core.time.time',return_value=now+59.9):
+            with self.assertRaises(BridgeError):
+                self.stage(source=CODEX,recipient=GROK,cid="chat_private_01",mid="sender-budget-extra",approved=False)
+        with patch('babel.core.time.time',return_value=now+60):
+            self.stage(source=CODEX,recipient=GROK,cid="chat_private_01",mid="sender-budget-extra",approved=False)
     def test_tool_catalog_exposes_only_own_routes_and_no_admin_tools(self):
         tools=dispatch(self.scoped(DOT),DOT,{"jsonrpc":"2.0","id":1,"method":"tools/list"})["result"]["tools"]
         stage=tools[0]["inputSchema"]

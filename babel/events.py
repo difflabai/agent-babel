@@ -236,6 +236,14 @@ class EventService:
                     (busy["expires"], row["seq"], row["lease_token"]))
             return True
         s = dict(subscription)
+        if message["status"] == "acknowledged":
+            # A recipient may read and acknowledge before its wake is dispatched.
+            # No delivery remains necessary; this is not a callback failure.
+            with self.store.transaction():
+                self.store.db.execute("""UPDATE outbox SET status='canceled',last_error='already_acknowledged',
+                    lease_token=NULL,lease_until=NULL
+                    WHERE seq=? AND status='leased' AND lease_token=?""", (row["seq"], row["lease_token"]))
+            return True
         current = self.policy.agents.get(s["role"])
         if (not s["active"] or s["expires"] <= time.time() or not current or current[0] != s["auth_digest"]
                 or message["recipient"] != s["role"] or message["status"] != "queued"):
