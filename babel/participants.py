@@ -19,7 +19,7 @@ def digest(value):
 
 def configure(policy, config, oauth_roles):
     from .auth import DIGEST
-    fields(config,("schema_version","owners","participants","conversations","approval"),
+    fields(config,("schema_version","owners","participants","conversations","approval","machines","machine_sessions"),
            ("schema_version","owners","participants","conversations"))
     approval=config.get("approval","manual")
     if approval not in ("manual","automatic"):
@@ -33,7 +33,9 @@ def configure(policy, config, oauth_roles):
         if type(entry["enabled"]) is not bool: raise BridgeError("Owner enabled must be boolean")
     if not isinstance(participants,dict) or not 1<=len(participants)<=64:
         raise BridgeError("Policy needs 1–64 explicitly configured participants")
-    seen=set(); policy.credential_digests={}
+    policy.owners=owners
+    from .machines import configure as configure_machines, validate_routes
+    seen=configure_machines(policy, config); policy.credential_digests={}
     for pid, entry in participants.items():
         if not PARTICIPANT.fullmatch(pid): raise BridgeError("Participant ID must be owner.client.instance")
         fields(entry,("owner","client","session","state","accepted","expires","activated_at","sha256"),
@@ -55,7 +57,7 @@ def configure(policy, config, oauth_roles):
             if not isinstance(value,str) or not DIGEST.fullmatch(value) or value=="0"*64 or value in seen:
                 raise BridgeError("Participant credentials must be distinct non-placeholder digests")
             seen.add(value); policy.credential_digests[pid]=value
-        elif entry["state"]=="active" and pid not in oauth_roles:
+        elif entry["state"]=="active" and pid not in oauth_roles and pid not in policy.machine_sessions:
             raise BridgeError("Active participant needs a separately provisioned credential or OAuth binding")
     if not isinstance(conversations,dict) or len(conversations)>64:
         raise BridgeError("At most 64 conversations may be configured")
@@ -86,7 +88,12 @@ def configure(policy, config, oauth_roles):
     policy.multi_owner=True; policy.owners=owners; policy.participants=participants
     policy.approval_mode=approval
     policy.conversations=conversations; policy.routes=frozenset(routes); policy.agents={}
+    validate_routes(policy)
     for pid, entry in participants.items():
         permissions=sorted(r for r in routes if pid in r[1:])
-        policy.agents[pid]=(digest([entry,owners[entry["owner"]],permissions]),
+        identity=[entry,owners[entry["owner"]],permissions]
+        if pid in policy.machine_sessions:
+            binding=policy.machine_sessions[pid]
+            identity.extend([binding,policy.machines[binding["machine"]]])
+        policy.agents[pid]=(digest(identity),
                             frozenset(r[2] for r in routes if r[1]==pid))

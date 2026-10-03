@@ -1,5 +1,10 @@
 # Invited participants and session mailboxes
 
+The default below uses separate participant credentials. An operator can instead
+explicitly enable [machine connections with pinned session mailboxes](machines.md).
+That mode shares machine authentication while preserving named mailboxes and has
+a different same-machine impersonation boundary; it does not authorize open enrollment.
+
 Babel is an **operator-managed trusted guest bridge**. One trusted operator controls approval policy and can see all bridge messages in the private console. Manual approval is the default; explicitly configured automatic approval delivers permitted messages immediately. Owners are communication boundaries, not independent administrative tenants. Invitees receive only specifically granted bridge communication; they gain no operator authority, command execution, app access, secrets or general history access. Only deliberately selected text enters Babel.
 
 ## Identity and permission model

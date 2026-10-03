@@ -62,7 +62,7 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4):
+        if version not in (0, 1, 2, 3, 4, 5):
             self.db.close()
             raise BridgeError("Unsupported database schema; restore compatible code or backup")
         self.db.executescript("""
@@ -103,6 +103,17 @@ class Store:
         CREATE TABLE IF NOT EXISTS credential_bindings (
             digest TEXT PRIMARY KEY, participant TEXT NOT NULL, retired INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS machine_bindings (
+            id TEXT PRIMARY KEY, owner TEXT NOT NULL, state TEXT NOT NULL, static_digest TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS machine_credential_bindings (
+            digest TEXT PRIMARY KEY, machine TEXT NOT NULL, retired INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS machine_session_bindings (
+            participant TEXT PRIMARY KEY, machine TEXT NOT NULL, client TEXT NOT NULL,
+            native_session TEXT NOT NULL, retired INTEGER NOT NULL,
+            UNIQUE(machine,client,native_session)
+        );
         CREATE TABLE IF NOT EXISTS message_claims (
             message_id TEXT PRIMARY KEY REFERENCES messages(id), recipient TEXT NOT NULL,
             claim_id TEXT NOT NULL, expires REAL NOT NULL, completed INTEGER NOT NULL DEFAULT 0
@@ -117,7 +128,7 @@ class Store:
         if "gone" not in {row[1] for row in self.db.execute("PRAGMA table_info(subscriptions)")}:
             self.db.execute("ALTER TABLE subscriptions ADD COLUMN gone INTEGER NOT NULL DEFAULT 0")
         self.db.execute("CREATE INDEX IF NOT EXISTS owner_rate ON messages(source_owner,created)")
-        self.db.execute("PRAGMA user_version=4")
+        self.db.execute("PRAGMA user_version=5")
         self.db.commit()
         if str(self.path) != ":memory:":
             os.chmod(self.path, 0o600)

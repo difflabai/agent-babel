@@ -61,7 +61,13 @@ class GatewayHandler(Handler):
         headers = self.headers.get_all("Authorization", [])
         if len(headers) != 1:
             raise BridgeError("Agent authentication required", 401)
-        return self.request_policy.authenticate(headers[0])
+        selectors = []
+        for name in ("Babel-Participant", "Babel-Native-Session"):
+            values = self.headers.get_all(name, [])
+            if len(values) > 1:
+                raise BridgeError("Duplicate machine session selector",403)
+            selectors.append(values[0] if values else None)
+        return self.request_policy.authenticate_request(headers[0], *selectors)
 
     def fail(self, exc):
         extra = None

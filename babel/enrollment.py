@@ -107,6 +107,22 @@ def change(config, action, **args):
         conversation=result["conversations"].get(args["conversation"])
         if not conversation: raise BridgeError("Conversation is unavailable")
         conversation["state"]="closed"
+    elif action=="machine":
+        mid=args["machine"]
+        if not isinstance(mid,str) or not COMPONENT.fullmatch(mid) or mid in result.get("machines",{}):
+            raise BridgeError("Use a fresh explicit machine ID")
+        result.setdefault("machines",{})[mid]={"owner":args["owner"],"state":"active",
+            "sha256":args["sha256"],"coordinators":args["coordinators"]}
+    elif action=="bind-machine":
+        pid=args["participant"]
+        entry=result["participants"].get(pid)
+        if not entry or entry["state"] not in ("invited","active") or pid in result.get("machine_sessions",{}):
+            raise BridgeError("Only an unbound pending or active worker may be bound")
+        result.setdefault("machine_sessions",{})[pid]={"machine":args["machine"],"native_session":args["native_session"]}
+    elif action=="revoke-machine":
+        entry=result.get("machines",{}).get(args["machine"])
+        if not entry: raise BridgeError("Machine is not configured")
+        entry["state"]="revoked"
     else: raise BridgeError("Unsupported policy operation")
     validate(result)
     return result
@@ -177,3 +193,9 @@ def add_parser(modes):
     hops=actions.add_parser("hop-limit",help="Optional conversation cap override; others default to 100")
     hops.add_argument("--conversation",required=True)
     hops.add_argument("--max-hops",required=True,type=int)
+    machine=actions.add_parser("machine",help="Host-only machine credential provisioning; no token generation")
+    for name in ("machine","owner","sha256"): machine.add_argument("--"+name,required=True)
+    machine.add_argument("--coordinators",nargs=2,required=True)
+    binding=actions.add_parser("bind-machine",help="Pin one native session to an existing participant")
+    for name in ("participant","machine","native-session"): binding.add_argument("--"+name,required=True)
+    actions.add_parser("revoke-machine").add_argument("--machine",required=True)

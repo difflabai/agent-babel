@@ -158,7 +158,7 @@ class StoreTests(unittest.TestCase):
             db.execute("PRAGMA user_version=1");db.commit();db.close()
             migrated=Store(path)
             self.assertEqual(migrated.inbox("grokbot")[0]["id"],row["id"])
-            self.assertEqual(migrated.db.execute("PRAGMA user_version").fetchone()[0],4)
+            self.assertEqual(migrated.db.execute("PRAGMA user_version").fetchone()[0],5)
             migrated.close()
             db=sqlite3.connect(path);db.execute("PRAGMA user_version=99");db.commit();db.close()
             with self.assertRaises(BridgeError): Store(path)

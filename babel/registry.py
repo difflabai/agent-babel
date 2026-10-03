@@ -8,6 +8,8 @@ def synchronize(store, policy):
         return
     now=time.time()
     with store.transaction():
+        from .machines import synchronize as synchronize_machines
+        synchronize_machines(store,policy)
         previous={r["id"]:dict(r) for r in store.db.execute("SELECT * FROM participant_bindings")}
         for pair,pid in getattr(policy,"bindings",{}).items():
             fingerprint=digest([policy.oauth["issuer"],*pair])
@@ -30,6 +32,8 @@ def synchronize(store, policy):
                     raise BridgeError("Activation time is immutable; use a fresh instance ID")
             static=policy.credential_digests.get(pid)
             if static:
+                if store.db.execute("SELECT 1 FROM machine_credential_bindings WHERE digest=?", (static,)).fetchone():
+                    raise BridgeError("A machine credential cannot become a participant credential")
                 known=store.db.execute("SELECT * FROM credential_bindings WHERE digest=?",(static,)).fetchone()
                 if known and (known["participant"]!=pid or (known["retired"] and state not in ("closed","revoked"))):
                     raise BridgeError("A retired or another participant's credential cannot be reused")

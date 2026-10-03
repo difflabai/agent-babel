@@ -86,6 +86,16 @@ class Policy:
         self.limit_request(role)
         return role
 
+    def authenticate_request(self, header, participant=None, native_session=None):
+        # Existing static/OAuth credentials cannot acquire selector authority.
+        # A selector pair is accepted only with a separately pinned machine key.
+        if participant is None and native_session is None:
+            return self.authenticate(header)
+        if not self.multi_owner or participant is None or native_session is None:
+            raise BridgeError("Both machine session selectors are required",403)
+        from .machines import authenticate
+        return authenticate(self, header, participant, native_session)
+
     def assert_active(self, role):
         if role not in self.agents: raise BridgeError("Participant access is unavailable",403)
         if self.multi_owner:
@@ -94,6 +104,9 @@ class Policy:
                     or now<entry["activated_at"]
                     or (entry["expires"] is not None and now>=entry["expires"])):
                 raise BridgeError("Participant access is unavailable",403)
+            binding=self.machine_sessions.get(role)
+            if binding and self.machines[binding["machine"]]["state"]!="active":
+                raise BridgeError("Machine access is unavailable",403)
 
     def assert_route(self, conversation, source, recipient):
         if not isinstance(source,str) or not isinstance(recipient,str) or (conversation is not None and not isinstance(conversation,str)):
