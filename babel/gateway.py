@@ -1,6 +1,7 @@
 """Public MCP only. Never serves operator routes, assets or global history."""
 from urllib.parse import urlsplit
 import threading
+import os
 from .auth import Policy, ScopedStore, public_origin
 from .core import BridgeError, Store
 from .mcp import dispatch
@@ -10,7 +11,7 @@ from .events import EventService
 from . import mcp2
 
 class Gateway(BoundedServer):
-    def __init__(self, port, policy, origin, store=None, host="127.0.0.1", wake_config=None, transport=None):
+    def __init__(self, port, policy, origin, store=None, host="127.0.0.1", wake_config=None, transport=None, synthetic_trial=False):
         # Validate all security configuration BEFORE listening or opening storage.
         self.origin = public_origin(origin)
         self.policy = policy
@@ -20,6 +21,12 @@ class Gateway(BoundedServer):
             raise BridgeError("OAuth resource must match the gateway public origin and /mcp")
         if not isinstance(policy, Policy):
             raise BridgeError("An explicit authentication policy is required")
+        if type(synthetic_trial) is not bool or (synthetic_trial and not policy.multi_owner):
+            raise BridgeError("Synthetic trial requires an explicit participant policy")
+        self.synthetic = None
+        if synthetic_trial:
+            from .synthetic import SyntheticTransfers
+            self.synthetic = SyntheticTransfers()
         self.hosts = {urlsplit(self.origin).netloc}
         self.origins = {self.origin}
         self.store = store if store is not None else Store()
@@ -29,6 +36,11 @@ class Gateway(BoundedServer):
         self.events = EventService(self.store, policy, wake_config or WakeConfig(), transport)
         super().__init__((host, port), GatewayHandler)
         self.port = self.server_address[1]
+
+    def service_actions(self):
+        # The existing server loop expires RAM payloads even with no tool traffic.
+        if self.synthetic is not None:
+            self.synthetic.expire()
 
     def current_policy(self):
         with self.policy_lock:
@@ -112,6 +124,7 @@ class GatewayHandler(Handler):
                 raise BridgeError("MCP Accept must include application/json and text/event-stream", 406)
             request = self.read_json()
             scoped = ScopedStore(self.server.store, role, self.request_policy.agents[role][1],self.request_policy)
+            scoped.synthetic = self.server.synthetic
             wake_config=self.server.wake_config
             if getattr(wake_config,"source_file",None): wake_config=WakeConfig.load(wake_config.source_file)
             events=EventService(self.server.store,self.request_policy,wake_config,self.server.transport)
@@ -154,7 +167,11 @@ class GatewayHandler(Handler):
             self.fail(exc)
 
 def run_gateway(port, auth_file, origin, host="127.0.0.1", wake_file=None):
-    server = Gateway(port, Policy.load(auth_file), origin, host=host, wake_config=WakeConfig.load(wake_file))
+    trial = os.environ.get("BABEL_SYNTHETIC_TRIAL", "0")
+    if trial not in ("0", "1"):
+        raise BridgeError("BABEL_SYNTHETIC_TRIAL must be 0 or 1")
+    server = Gateway(port, Policy.load(auth_file), origin, host=host,
+                     wake_config=WakeConfig.load(wake_file), synthetic_trial=trial == "1")
     print("Agent Babel authenticated gateway ready; operator controls are private.", flush=True)
     try:
         server.serve_forever()

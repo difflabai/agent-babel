@@ -95,12 +95,18 @@ def dispatch(store, role, request, versions=VERSIONS):
             stage["properties"]["recipient"]={"type":"string","description":"A current permitted recipient from list_contacts."}
             stage["properties"]["conversation_id"]={"type":"string","description":"The matching current conversation ID from list_contacts."}
             stage["required"].append("conversation_id")
+        synthetic = getattr(store, "synthetic", None)
+        if synthetic is not None and synthetic.available(store):
+            from .synthetic import TOOL
+            tools.append(copy.deepcopy(TOOL))
         result = {"tools": tools}
     elif method == "tools/call":
         try:
             fields(params, ("name", "arguments", "_meta"), ("name",))
             name, args = params["name"], params.get("arguments", {})
-            if name == "stage_message":
+            if name == "synthetic_transfer" and getattr(store, "synthetic", None) is not None:
+                result = store.synthetic.call(store, args)
+            elif name == "stage_message":
                 fields(args, ("recipient", "text", "message_id", "reply_to", "conversation_id"),
                        ("recipient", "text", "message_id"))
                 identifier(args["message_id"])
