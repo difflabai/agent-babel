@@ -37,7 +37,8 @@ def policy_fixture():
 
 class SyntheticTests(unittest.TestCase):
     def setUp(self):
-        self.policy = Policy(policy_fixture())
+        self.cfg = policy_fixture()
+        self.policy = Policy(self.cfg)
         self.store = Store(":memory:")
         self.store.sync_policy(self.policy)
         self.now = 1000.0
@@ -139,7 +140,7 @@ class SyntheticTests(unittest.TestCase):
     def test_route_and_participant_revocation_checked_each_call(self):
         self.begin()
         for mode in ("route", "participant"):
-            cfg = copy.deepcopy(policy_fixture())
+            cfg = copy.deepcopy(self.cfg)
             if mode == "route":
                 cfg["conversations"][CONVERSATION]["routes"] = []
             else:
@@ -252,7 +253,7 @@ class SyntheticTests(unittest.TestCase):
         self.expect_error(403, lambda: self.call("put_batch", role=ADA, chunks=[self.batch_chunk(0)]))
         self.expect_error(403, lambda: self.call("get_batch", role=WORKER, offsets=[0]))
         self.expect_error(409, lambda: self.call("get_batch", role=ADA, offsets=[0]))
-        cfg = policy_fixture(); cfg["conversations"][CONVERSATION]["routes"] = []
+        cfg = copy.deepcopy(self.cfg); cfg["conversations"][CONVERSATION]["routes"] = []
         self.expect_error(403, lambda: self.trial.call(self.scoped(policy=Policy(cfg)),
             {"action": "put_batch", "transfer_id": "synthetic-test-001", "chunks": [self.batch_chunk(0)]}))
         self.now += TTL
@@ -275,7 +276,7 @@ class SyntheticTests(unittest.TestCase):
     def test_live_policy_reload_revokes_access(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "policy.json"
-            cfg = policy_fixture(); path.write_text(json.dumps(cfg))
+            cfg = copy.deepcopy(self.cfg); path.write_text(json.dumps(cfg))
             scope = self.scoped(policy=Policy.load(path))
             self.trial.call(scope, {"action": "begin", "transfer_id": "live-revoke-001", "recipient": ADA,
                                    "size": 1, "sha256": digest(fixture(0, 1))})
