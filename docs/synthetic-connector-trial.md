@@ -25,8 +25,10 @@ is `(i * 73 + 19) % 256`. This is an independently reproducible test pattern;
 |---|---|---|
 | `begin` | `recipient`, `size`, `sha256` | Manifest, expiry, chunk size, received count |
 | `put` | `offset`, `data_base64`, `sha256` | Updated received count |
+| `put_batch` | `chunks` array, one or two objects with `offset`, `data_base64`, `sha256` | Updated count after atomic batch validation |
 | `commit` | None | Committed manifest after full size and SHA-256 verification |
 | `get` | `offset` | Base64 chunk, decoded length, chunk SHA-256, total size and file SHA-256 |
+| `get_batch` | `offsets` array, one or two contiguous offsets | `chunks` with per-chunk offset/length/hash/base64, plus transfer ID, total size and file hash |
 | `status` | None | Manifest/state/received count, no payload |
 | `delete` | None | Deleted state; payload removed |
 
@@ -44,6 +46,48 @@ lowercase hexadecimal SHA-256: whole fixture for begin, decoded chunk for put.
 Get is unavailable before commit; truncation, wrong lengths, invalid base64,
 wrong hashes and conflicting offsets are rejected. Unsupported fields are
 rejected, including caller identity, source path, remote URL, and TTL overrides.
+
+## Bounded additive batching
+
+Single-chunk actions keep their existing arguments and results. `put_batch` and
+`get_batch` add at most **two contiguous 4096-byte chunks / 8192 decoded bytes**
+per request or response. Offsets must be ascending with a 4096-byte step; a short
+final chunk follows the same file-size rule. Empty, oversized, duplicate, gapped,
+reversed or malformed batches are rejected. There is no arbitrary size override.
+
+Upload validates all nested fields, lengths, hashes, fixture bytes and offsets,
+then builds a candidate without mutating stored bytes. Only a fully valid batch
+is applied; a bad second chunk leaves the first unapplied. An existing matching
+prefix plus a new contiguous chunk is accepted atomically. Identical whole-batch
+retries are idempotent, including retries of committed bytes. Only the source
+may upload. Both endpoints may download committed chunks. Existing authentication,
+route, RAM, 900-second TTL, file/capacity and HTTP-rate limits are unchanged.
+
+The descriptor adds the `put_batch` / `get_batch` action enum values and the
+`chunks` / `offsets` array properties (one or two items each); no tool is renamed
+or added. Refresh the existing connection before testing these descriptors.
+
+Start with **8 KiB only**, under a fresh transfer ID. Begin for size8192 with the
+fixture's whole hash. Call `put_batch` with offsets0/4096 and their hashes/base64;
+commit; then `get_batch` with `offsets: [0, 4096]`. The result has outer
+`transfer_id`, `total_size`, `file_sha256` and a two-item `chunks` array. Each item
+has `offset`, `length`, `sha256`, `data_base64`. Decode and check every item and
+complete fixture equality inside code mode, materialize/re-read scratch bytes,
+and record timing around each awaited tool call without printing byte payloads.
+Check the native result is complete, untruncated and actually contains both
+chunks. Only then consider at most64KiB; larger tests need a new practical timing
+assessment. Sender and recipient use their own existing authenticated connections.
+
+An 8KiB batch round-trip requires four RPCs (begin, put_batch, commit, get_batch).
+16KiB requires six, 64KiB requires18, and1MiB still requires258. The observed
+first native 16KiB single-chunk test took about205 seconds across ten RPCs,
+including orchestration/yield overhead. Even a factor-of-two call reduction does
+not make multi-megabyte files practical at that observed rate. The payload text
+is larger per response, so **native8KiB truncation/hash checks are required**.
+
+A gateway restart discards RAM state. Finish or explicitly release any retained
+native expiry/recipient tests before deploying a change that restarts it; do not
+substitute persistence or a shorter TTL to make those tests pass.
 
 ## Retention and limits
 

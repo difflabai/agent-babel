@@ -177,6 +177,101 @@ class SyntheticTests(unittest.TestCase):
             self.assertEqual(self.trial.records["synthetic-test-001"]["data"], b"")
         finally:
             server.server_close()
+    def batch_chunk(self, offset, size=16384):
+        chunk = fixture(offset, min(4096, size - offset))
+        return {"offset": offset, "sha256": digest(chunk),
+                "data_base64": base64.b64encode(chunk).decode()}
+    def test_batch_round_trip_final_short_chunk_and_old_actions(self):
+        size = 8193
+        self.begin(size)
+        chunks = [self.batch_chunk(offset, size) for offset in (0, 4096)]
+        self.call("put_batch", chunks=chunks)
+        self.call("put_batch", chunks=chunks)
+        self.put(8192, size)
+        self.call("commit")
+        self.call("put_batch", chunks=chunks)
+        result = self.call("get_batch", role=ADA, offsets=[0, 4096])
+        output = b""
+        self.assertEqual(result["total_size"], size)
+        self.assertEqual(result["file_sha256"], digest(fixture(0, size)))
+        for offset, chunk in zip((0, 4096), result["chunks"]):
+            decoded = base64.b64decode(chunk["data_base64"], validate=True)
+            self.assertEqual(chunk["offset"], offset)
+            self.assertEqual(chunk["length"], len(decoded))
+            self.assertEqual(chunk["sha256"], digest(decoded))
+            output += decoded
+        final = self.call("get_batch", offsets=[8192])["chunks"][0]
+        self.assertEqual(final["length"], 1)
+        self.assertEqual(final, {k: self.call("get", offset=8192)[k]
+                                for k in ("offset", "length", "sha256", "data_base64")})
+        output += base64.b64decode(final["data_base64"], validate=True)
+        self.assertEqual(output, fixture(0, size))
+    def test_batch_second_chunk_rejection_is_atomic(self):
+        self.begin()
+        good = self.batch_chunk(0)
+        for kind in ("base64", "digest", "length", "fixture", "unsupported", "gap", "offset"):
+            bad = self.batch_chunk(4096)
+            status = 400
+            if kind == "base64": bad["data_base64"] = "!!!"
+            elif kind == "digest": bad["sha256"] = "0" * 64
+            elif kind == "length":
+                bad["data_base64"] = "AA=="; bad["sha256"] = digest(b"\0")
+            elif kind == "fixture":
+                value = b"\0" * 4096
+                bad["data_base64"] = base64.b64encode(value).decode(); bad["sha256"] = digest(value)
+            elif kind == "unsupported": bad["url"] = "https://example.com"
+            elif kind == "gap": bad = self.batch_chunk(8192); status = 409
+            elif kind == "offset": bad["offset"] = True
+            self.expect_error(status, lambda: self.call("put_batch", chunks=[good, bad]))
+            self.assertEqual(self.call("status")["received_bytes"], 0)
+    def test_batch_partial_retry_bad_second_leaves_existing_prefix(self):
+        self.begin(); self.put(0)
+        good = self.batch_chunk(0); bad = self.batch_chunk(4096); bad["sha256"] = "0" * 64
+        self.expect_error(400, lambda: self.call("put_batch", chunks=[good, bad]))
+        self.assertEqual(self.call("status")["received_bytes"], 4096)
+        self.call("put_batch", chunks=[good, self.batch_chunk(4096)])
+        self.assertEqual(self.call("status")["received_bytes"], 8192)
+        self.expect_error(409, lambda: self.call("put_batch", chunks=[self.batch_chunk(12288)]))
+        self.assertEqual(self.call("status")["received_bytes"], 8192)
+    def test_batch_shape_count_contiguity_and_bounds(self):
+        self.begin()
+        for chunks in ([], {}, None, [self.batch_chunk(0)] * 3, [None]):
+            self.expect_error(400, lambda: self.call("put_batch", chunks=chunks))
+        self.expect_error(409, lambda: self.call("put_batch", chunks=[self.batch_chunk(0)] * 2))
+        self.call("put_batch", chunks=[self.batch_chunk(0), self.batch_chunk(4096)])
+        self.call("put_batch", chunks=[self.batch_chunk(8192), self.batch_chunk(12288)])
+        self.call("commit")
+        for offsets in ([], {}, None, [0, 4096, 8192], [True], [16384]):
+            self.expect_error(400, lambda: self.call("get_batch", offsets=offsets))
+        for offsets in ([0, 8192], [4096, 0], [0, 0]):
+            self.expect_error(409, lambda: self.call("get_batch", offsets=offsets))
+        self.expect_error(400, lambda: self.call("put_batch", chunks=[self.batch_chunk(0)], offset=0))
+        self.expect_error(400, lambda: self.call("get_batch", offsets=[0], source=ADA))
+    def test_batch_auth_expiry_and_revocation_constraints(self):
+        self.begin()
+        self.expect_error(403, lambda: self.call("put_batch", role=ADA, chunks=[self.batch_chunk(0)]))
+        self.expect_error(403, lambda: self.call("get_batch", role=WORKER, offsets=[0]))
+        self.expect_error(409, lambda: self.call("get_batch", role=ADA, offsets=[0]))
+        cfg = policy_fixture(); cfg["conversations"][CONVERSATION]["routes"] = []
+        self.expect_error(403, lambda: self.trial.call(self.scoped(policy=Policy(cfg)),
+            {"action": "put_batch", "transfer_id": "synthetic-test-001", "chunks": [self.batch_chunk(0)]}))
+        self.now += TTL
+        self.expect_error(410, lambda: self.call("put_batch", chunks=[self.batch_chunk(0)]))
+        self.expect_error(410, lambda: self.call("get_batch", offsets=[0]))
+        self.assertEqual(self.trial.records["synthetic-test-001"]["data"], b"")
+    def test_concurrent_batch_retry_is_idempotent(self):
+        self.begin()
+        errors = []
+        def put():
+            try:
+                self.call("put_batch", chunks=[self.batch_chunk(0), self.batch_chunk(4096)])
+            except Exception as exc:
+                errors.append(exc)
+        threads = [threading.Thread(target=put) for _ in range(8)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(self.call("status")["received_bytes"], 8192)
     def test_live_policy_reload_revokes_access(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "policy.json"
@@ -233,6 +328,15 @@ class SyntheticHTTPTests(unittest.TestCase):
                 chunk = call("get", role=ADA, offset=offset)
                 downloaded.extend(base64.b64decode(chunk["data_base64"], validate=True))
             self.assertEqual(digest(downloaded), digest(full))
+            batch = call("get_batch", role=ADA, offsets=[0, 4096])
+            self.assertEqual(len(batch["chunks"]), 2)
+            self.assertEqual(b"".join(base64.b64decode(c["data_base64"], validate=True)
+                                     for c in batch["chunks"]), full[:8192])
+            chunks = [{"offset": offset, "sha256": digest(full[offset:offset + 4096]),
+                       "data_base64": base64.b64encode(full[offset:offset + 4096]).decode()}
+                      for offset in (0, 4096)]
+            call("put_batch", chunks=chunks)  # Retry committed bytes through HTTP.
+            self.assertEqual(server.synthetic.records["http-roundtrip-001"]["data"], full)
             call("delete", role=ADA)
         finally:
             server.shutdown(); server.server_close(); thread.join(); store.close()

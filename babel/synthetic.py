@@ -13,6 +13,7 @@ from .core import BridgeError, fields, identifier
 SISTERS = frozenset(("bits255.dots.ada_20261002", "bits255.grokbot.grok_20261002"))
 CONVERSATION = "bits255_ada_grok"
 CHUNK_BYTES = 4096
+MAX_BATCH_CHUNKS = 2
 MAX_BYTES = 1024 * 1024
 TTL = 900
 MAX_ACTIVE = 8
@@ -31,17 +32,26 @@ TOOL = {
     "Byte i is (i*73+19)%256; maximum 1 MiB, chunks at most 4096 bytes. "
     "Begin with recipient, size, sha256 of the full fixture; put contiguous base64 chunks "
     "with offset and sha256; commit before get. Either endpoint may get committed chunks "
-    "and delete. RAM-only, expires 900 seconds after begin; restart aborts transfers. "
+    "and delete. put_batch/get_batch accept at most two contiguous chunks (8192 bytes), "
+    "with atomic upload validation. RAM-only, expires 900 seconds after begin; restart aborts transfers. "
     "Client tool arguments/results may be retained. Not a real-file sharing tool.",
     "inputSchema": {"type": "object", "additionalProperties": False,
         "required": ["action", "transfer_id"], "properties": {
-            "action": {"type": "string", "enum": ["begin", "put", "commit", "get", "status", "delete"]},
+            "action": {"type": "string", "enum": ["begin", "put", "put_batch", "commit", "get", "get_batch", "status", "delete"]},
             "transfer_id": {"type": "string", "minLength": 8, "maxLength": 128},
             "recipient": {"type": "string", "enum": sorted(SISTERS)},
             "size": {"type": "integer", "minimum": 1, "maximum": MAX_BYTES},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "offset": {"type": "integer", "minimum": 0, "maximum": MAX_BYTES},
-            "data_base64": {"type": "string", "maxLength": 5464}}},
+            "data_base64": {"type": "string", "maxLength": 5464},
+            "chunks": {"type": "array", "minItems": 1, "maxItems": MAX_BATCH_CHUNKS,
+                "items": {"type": "object", "additionalProperties": False,
+                    "required": ["offset", "sha256", "data_base64"], "properties": {
+                        "offset": {"type": "integer", "minimum": 0, "maximum": MAX_BYTES},
+                        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "data_base64": {"type": "string", "maxLength": 5464}}}},
+            "offsets": {"type": "array", "minItems": 1, "maxItems": MAX_BATCH_CHUNKS,
+                "items": {"type": "integer", "minimum": 0, "maximum": MAX_BYTES}}}},
     "annotations": {"readOnlyHint": False, "destructiveHint": True,
                     "idempotentHint": True, "openWorldHint": False}}
 
@@ -69,17 +79,72 @@ class SyntheticTransfers:
                     "sha256", "expires", "state")} | {"received_bytes": len(record["data"]),
                     "fixture": FIXTURE, "chunk_bytes": CHUNK_BYTES}
 
+    @staticmethod
+    def offset(record, value):
+        if type(value) is not int or not 0 <= value < record["size"] or value % CHUNK_BYTES:
+            raise BridgeError("Invalid chunk offset")
+        return value
+
+    @staticmethod
+    def batch(items):
+        if not isinstance(items, list) or not 1 <= len(items) <= MAX_BATCH_CHUNKS:
+            raise BridgeError("Batch requires one or two chunks")
+        return items
+
+    @staticmethod
+    def contiguous(offsets):
+        if any(b != a + CHUNK_BYTES for a, b in zip(offsets, offsets[1:])):
+            raise BridgeError("Batch offsets must be contiguous", 409)
+
+    def decode_chunk(self, record, args):
+        fields(args, ("offset", "sha256", "data_base64"), ("offset", "sha256", "data_base64"))
+        offset = self.offset(record, args["offset"])
+        encoded = args["data_base64"]
+        if not isinstance(encoded, str) or len(encoded) > 5464:
+            raise BridgeError("Invalid base64 chunk")
+        try:
+            chunk = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            raise BridgeError("Invalid base64 chunk") from None
+        length = min(CHUNK_BYTES, record["size"] - offset)
+        if len(chunk) != length or args["sha256"] != digest(chunk) or chunk != fixture(offset, length):
+            raise BridgeError("Chunk length, digest or synthetic bytes mismatch")
+        return offset, chunk
+
+    def upload(self, record, prepared):
+        self.contiguous([offset for offset, _ in prepared])
+        # Build a candidate without mutating the record. A bad second chunk or
+        # offset leaves the entire batch unapplied, including partial retries.
+        candidate = record["data"]
+        for offset, chunk in prepared:
+            received = len(candidate)
+            if offset < received:
+                if candidate[offset:offset + len(chunk)] != chunk:
+                    raise BridgeError("Conflicting retry", 409)
+            elif record["state"] != "uploading" or offset != received:
+                raise BridgeError("Noncontiguous or conflicting offset", 409)
+            else:
+                candidate += chunk
+        record["data"] = candidate
+
+    @staticmethod
+    def download(record, offset):
+        chunk = record["data"][offset:offset + CHUNK_BYTES]
+        return {"offset": offset, "length": len(chunk), "sha256": digest(chunk),
+                "data_base64": base64.b64encode(chunk).decode("ascii")}
+
     def call(self, scoped, args):
         if not self.available(scoped):
             raise BridgeError("Unknown tool", 403)
         scoped.guard()
-        fields(args, ("action", "transfer_id", "recipient", "size", "sha256", "offset", "data_base64"),
+        fields(args, ("action", "transfer_id", "recipient", "size", "sha256", "offset", "data_base64", "chunks", "offsets"),
                ("action", "transfer_id"))
         action, transfer_id = args["action"], identifier(args["transfer_id"])
-        if action not in ("begin", "put", "commit", "get", "status", "delete"):
+        if action not in ("begin", "put", "put_batch", "commit", "get", "get_batch", "status", "delete"):
             raise BridgeError("Unknown synthetic action")
         required = {"begin": ("recipient", "size", "sha256"),
-                    "put": ("offset", "sha256", "data_base64"), "get": ("offset",)}.get(action, ())
+                    "put": ("offset", "sha256", "data_base64"), "put_batch": ("chunks",),
+                    "get": ("offset",), "get_batch": ("offsets",)}.get(action, ())
         fields(args, ("action", "transfer_id") + required, ("action", "transfer_id") + required)
         peer = next(role for role in SISTERS if role != scoped.role)
         scoped.policy.assert_route(CONVERSATION, scoped.role, peer)
@@ -118,40 +183,25 @@ class SyntheticTransfers:
                     return self.summary(record)
                 if record["state"] in ("expired", "deleted"):
                     raise BridgeError("Transfer expired or deleted", 410)
-                if action in ("put", "commit") and scoped.role != record["source"]:
+                if action in ("put", "put_batch", "commit") and scoped.role != record["source"]:
                     raise BridgeError("Only the source may upload or commit", 403)
-                if action in ("put", "get"):
-                    offset = args["offset"]
-                    if type(offset) is not int or not 0 <= offset < record["size"] or offset % CHUNK_BYTES:
-                        raise BridgeError("Invalid chunk offset")
-                if action == "put":
-                    encoded = args["data_base64"]
-                    if not isinstance(encoded, str) or len(encoded) > 5464:
-                        raise BridgeError("Invalid base64 chunk")
-                    try:
-                        chunk = base64.b64decode(encoded, validate=True)
-                    except (ValueError, binascii.Error):
-                        raise BridgeError("Invalid base64 chunk") from None
-                    length = min(CHUNK_BYTES, record["size"] - offset)
-                    if len(chunk) != length or args["sha256"] != digest(chunk) or chunk != fixture(offset, length):
-                        raise BridgeError("Chunk length, digest or synthetic bytes mismatch")
-                    received = len(record["data"])
-                    if offset < received:
-                        if record["data"][offset:offset + length] != chunk:
-                            raise BridgeError("Conflicting retry", 409)
-                    elif record["state"] != "uploading" or offset != received:
-                        raise BridgeError("Noncontiguous or conflicting offset", 409)
-                    else:
-                        record["data"] += chunk
+                if action in ("put", "put_batch"):
+                    chunks = self.batch(args["chunks"]) if action == "put_batch" else [
+                        {key: args[key] for key in ("offset", "sha256", "data_base64")}]
+                    prepared = [self.decode_chunk(record, chunk) for chunk in chunks]
+                    self.upload(record, prepared)
                 elif action == "commit":
                     if len(record["data"]) != record["size"] or digest(record["data"]) != record["sha256"]:
                         raise BridgeError("Incomplete or truncated transfer", 409)
                     record["state"] = "committed"
-                elif action == "get":
+                elif action in ("get", "get_batch"):
+                    offsets = self.batch(args["offsets"]) if action == "get_batch" else [args["offset"]]
+                    offsets = [self.offset(record, offset) for offset in offsets]
+                    self.contiguous(offsets)
                     if record["state"] != "committed":
                         raise BridgeError("Transfer must be committed before download", 409)
-                    chunk = record["data"][offset:offset + CHUNK_BYTES]
-                    return {"transfer_id": transfer_id, "offset": offset, "length": len(chunk),
-                            "sha256": digest(chunk), "data_base64": base64.b64encode(chunk).decode("ascii"),
-                            "total_size": record["size"], "file_sha256": record["sha256"]}
+                    result = {"transfer_id": transfer_id, "total_size": record["size"],
+                              "file_sha256": record["sha256"]}
+                    chunks = [self.download(record, offset) for offset in offsets]
+                    return result | ({"chunks": chunks} if action == "get_batch" else chunks[0])
             return self.summary(record)
