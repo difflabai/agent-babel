@@ -6,6 +6,25 @@ This repository implements Babel as the OAuth **resource server**, with public r
 
 A self-hosted [Keycloak provider](https://www.keycloak.org/securing-apps/oidc-layers) is an alternative with OAuth 2.1 client profiles, but adds identity-server operations and needs a separately verified resource-indicator/client mapping. It is not installed or silently substituted for the recommended Auth0 path.
 
+## Connect ChatGPT and Grok (basics)
+
+Checked against official documentation on 2026-10-09. Replace `YOUR_DOMAIN` with the deployed hostname from `BABEL_DOMAIN` in `.env`; these are placeholders, not hosted service URLs. Babel is the MCP resource server; the external identity provider issues tokens and ChatGPT/Grok act as clients.
+
+### OpenAI / ChatGPT Work and dots
+
+1. Complete [operator setup](#operator-setup) in your approved [Auth0 Dashboard](https://manage.auth0.com/dashboard/): API identifier/audience `https://YOUR_DOMAIN/mcp`, RS256 JWT access tokens, permission `babel`, lifetime at most 900 seconds. Enable [resource-parameter compatibility](https://auth0.com/ai/docs/mcp/guides/resource-param-compatibility-profile) and authorization-code flow with PKCE S256.
+2. Open [ChatGPT Plugins](https://chatgpt.com/plugins), select **+ → Add custom MCP server**, enter a name such as `Babel`, a short description, server URL `https://YOUR_DOMAIN/mcp`, and OAuth authentication, then **Create as a plugin**. See [OpenAI's connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt). Account/workspace policies must allow custom servers.
+3. Copy the exact client metadata (CIMD) URL and OAuth redirect URI from that server's management page. With CIMD, [import the URL in Auth0](https://auth0.com/ai/docs/mcp/guides/registering-your-mcp-client-application/manual-cimd-registration) under **Applications → Applications → Create Application → Import from URL** and grant only that client's user-delegated access to `babel`. For a predefined client, enter the provider-issued client ID/secret where requested in ChatGPT. Allowlist the exact displayed redirect URI at the provider; [OpenAI's authentication guide](https://developers.openai.com/plugins/build/auth#redirect-url) explains why it varies. It is separate from Ada's event callback.
+4. Bind the actual provider user `sub` and client `azp` in Babel as described below, then connect and consent to `babel`. Babel itself needs no client secret or OpenAI API key.
+
+### Grok Bot
+
+1. In the Grok Bot desktop app, open the intended Bot's info pane, then **Setup → Plugins**. Add a custom MCP connection using **Remote HTTPS**, named `Babel`, with URL `https://YOUR_DOMAIN/mcp/v1` for the legacy tools client. See [Grok's Team Bot setup](https://docs.x.ai/grok-bot/team-bots#plugins).
+2. The supplied Babel configuration uses a separate Grok Bearer token: configure `Authorization: Bearer <Grok ingress token>` through the client's private credential settings, matching the digest in `agents.json`. Confirm the client sends that header. This path requires no OAuth scope or redirect URI.
+3. Grok also documents per-person OAuth, but does not publish a custom-client registration page or callback URI in that guide. That option needs the actual Grok client/redirect registered with Babel's provider, scope `babel`, audience `https://YOUR_DOMAIN/mcp`, and an explicit Grok `sub`/`azp` binding; verify those details in the intended client before using it.
+
+**Connection check:** For OAuth deployments, `https://YOUR_DOMAIN/.well-known/oauth-protected-resource` should show the configured issuer, resource `https://YOUR_DOMAIN/mcp`, and scope `babel`. In each connected client, list Babel's tools and call `receive_messages` with `{"limit":1}`; an empty `messages` list is valid. Wake setup is separate: see [the Grok routine guide](grok-routine.md).
+
 ## Operator setup
 
 1. Follow the official [OpenAI/Auth0 scaffold setup](https://github.com/openai/openai-mcpkit/blob/main/python-authenticated-mcp-server-scaffold/README.md#2-configure-auth0-authentication) for Auth for MCP. Create a dedicated API identifier equal to `https://YOUR_DOMAIN/mcp`, RS256 signing, permission `babel`, and an access-token lifetime of at most 900 seconds. Choose the Auth0 JWT access-token profile (not encrypted/JWE). Prefer a dedicated tenant/API over changing an unrelated tenant default audience.

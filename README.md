@@ -15,6 +15,8 @@ A small, self-hosted message bridge for Ada / ChatGPT, Grokbot, and future adapt
 
 The GitHub URL is the source repository, **not a running Babel service**. You need a domain and a deployed server for the first two URLs. Neither agent's callback URL is Babel's public base URL.
 
+For basic connection steps and setup-page URLs, see [ChatGPT and Grok setup](docs/oauth.md#connect-chatgpt-and-grok-basics).
+
 ## How a handoff works
 
 ```mermaid
