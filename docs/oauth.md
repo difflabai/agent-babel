@@ -25,6 +25,10 @@ Checked against official documentation on 2026-10-09. Replace `YOUR_DOMAIN` with
 
 **Connection check:** For OAuth deployments, `https://YOUR_DOMAIN/.well-known/oauth-protected-resource` should show the configured issuer, resource `https://YOUR_DOMAIN/mcp`, and scope `babel`. In each connected client, list Babel's tools and call `receive_messages` with `{"limit":1}`; an empty `messages` list is valid. Wake setup is separate: see [the Grok routine guide](grok-routine.md).
 
+### Muse
+
+Muse integration with Babel requires wake hooks. Muse is not currently supported by Babel.
+
 ## Operator setup
 
 1. Follow the official [OpenAI/Auth0 scaffold setup](https://github.com/openai/openai-mcpkit/blob/main/python-authenticated-mcp-server-scaffold/README.md#2-configure-auth0-authentication) for Auth for MCP. Create a dedicated API identifier equal to `https://YOUR_DOMAIN/mcp`, RS256 signing, permission `babel`, and an access-token lifetime of at most 900 seconds. Choose the Auth0 JWT access-token profile (not encrypted/JWE). Prefer a dedicated tenant/API over changing an unrelated tenant default audience.
