@@ -16,6 +16,10 @@ from babel.core import BridgeError
 from babel.session_leases import PEERS, SessionLeases
 from babel.account_bootstrap import local_key
 
+# The laptop submits its own native request through existing operator SSH.
+# The remote collector remains scoped to the two pinned Pop accounts.
+COLLECTOR_PEERS = PEERS - {'ntc@laptop'}
+
 SSH_OPTIONS=['-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','PreferredAuthentications=publickey',
              '-o','PasswordAuthentication=no','-o','KbdInteractiveAuthentication=no','-o','ConnectTimeout=8']
 # This fixed remote program reads ONLY lifecycle JSON metadata, never token or env.
@@ -52,7 +56,7 @@ print(json.dumps(out))
 
 
 def validate(peer,item):
-    if peer not in PEERS or not isinstance(item,dict) or set(item)!={'folder','request'}:
+    if peer not in COLLECTOR_PEERS or not isinstance(item,dict) or set(item)!={'folder','request'}:
         raise BridgeError('Unapproved collector account or invalid request')
     request=item['request']
     if not isinstance(request,dict) or (set(request)-{'existing_participant','observed_at'})!={'schema_version','client','native_id','sha256','event_id','kind'} or type(request['schema_version']) is not int or request['schema_version']!=2:
@@ -68,7 +72,7 @@ def validate(peer,item):
 
 
 def collect(peer,runner=subprocess.run):
-    if peer not in PEERS:raise BridgeError('Unapproved collector account')
+    if peer not in COLLECTOR_PEERS:raise BridgeError('Unapproved collector account')
     result=runner(['ssh',*SSH_OPTIONS,peer,'python3','-c',__import__('shlex').quote(REMOTE)],capture_output=True,text=True,timeout=20)
     if result.returncode:raise BridgeError('Pinned SSH collector unavailable')
     if len(result.stdout.encode())>4194304:raise BridgeError('Collector response too large')
@@ -79,7 +83,7 @@ def collect(peer,runner=subprocess.run):
 
 
 def submit(peer,request,runner=subprocess.run):
-    if peer not in PEERS:raise BridgeError('Unapproved collector account')
+    if peer not in COLLECTOR_PEERS:raise BridgeError('Unapproved collector account')
     # The restricted private command is a PROPOSED installation path. It accepts
     # verified peer as operator metadata; worker JSON cannot override that peer.
     result=runner(['ssh',*SSH_OPTIONS,'root@159.195.17.119','/usr/local/sbin/agent-babel-trusted-session',peer],
@@ -162,7 +166,7 @@ def apply_pending(peer,requests,ledger_file,runner=subprocess.run):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--peer',choices=sorted(PEERS),action='append',required=True)
+    p.add_argument('--peer',choices=sorted(COLLECTOR_PEERS),action='append',required=True)
     p.add_argument('--apply',action='store_true',help='Explicitly invoke the private operator command; default is metadata counts only')
     p.add_argument('--ledger',help='Existing owned private directory plus collector dedup filename; required for --apply')
     a=p.parse_args()

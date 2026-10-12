@@ -115,13 +115,23 @@ class LeaseTests(unittest.TestCase):
         self.leases=SessionLeases(self.store,accounts(),clock=lambda:self.now)
         with self.assertRaises(BridgeError):self.boot(FORK,'fork')
         self.boot(FORK,'fork',peer='work@pop-os')
-    def test_account_allowlist_owner_revocation_and_ntc_denied(self):
+    def test_account_allowlist_owner_revocation_and_laptop_default_denial(self):
         with self.assertRaises(BridgeError):self.boot(peer='ntc@laptop')
-        cfg=accounts();cfg['accounts']['ntc@laptop']={'enabled':True,'clients':['codex']}
+        cfg=accounts();cfg['accounts']['root@laptop']={'enabled':True,'clients':['codex']}
         with self.assertRaises(BridgeError):SessionLeases(self.store,cfg)
         b=self.boot();self.cfg['owners']['bits255']['enabled']=False
         p=self.leases.project(Policy(self.cfg))
         with self.assertRaises(BridgeError):p.authenticate('Bearer '+TOKENS['auto'])
+    def test_explicit_laptop_account_uses_same_scoped_native_lease(self):
+        cfg=accounts();cfg['accounts']['ntc@laptop']={'enabled':True,'clients':['codex']}
+        self.leases=SessionLeases(self.store,cfg,clock=lambda:self.now)
+        b=self.boot(peer='ntc@laptop');deadline=b['deadline']
+        self.assertEqual(self.scoped(b['participant']).contacts(b['participant']),[{'recipient':EMBER,'conversation_id':b['conversation']}])
+        self.assertEqual(self.send(b)['message']['status'],'queued')
+        self.now+=100
+        self.assertEqual(self.boot(peer='ntc@laptop'),b)
+        self.assertEqual(self.leases.row(b['participant'])['deadline'],deadline)
+        with self.assertRaises(BridgeError):self.scoped(b['participant']).policy.assert_route(b['conversation'],b['participant'],ADA)
     def test_active_capacity_reclaimed_on_expiry_without_deleting_history(self):
         self.leases.config['max_active']=1;b=self.boot();self.send(b)
         with self.assertRaises(BridgeError):self.boot(FORK,'fork')

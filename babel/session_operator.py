@@ -1,7 +1,7 @@
 """Private operator command for schema-2 collector requests. No public RPC."""
 from .auth import Policy
 from .core import fields, BridgeError, Store
-from .session_leases import SessionLeases, load_accounts
+from .session_leases import SessionLeases, load_accounts, PEERS
 
 
 def apply(store, config, policy, verified_peer, request):
@@ -19,7 +19,7 @@ def add_parser(modes):
     parser=modes.add_parser('trusted-session',help='PRIVATE trusted-account lifecycle operator; disabled unless configured')
     parser.add_argument('--accounts-file',required=True)
     parser.add_argument('--policy-file',required=True)
-    parser.add_argument('--peer',required=True,choices=('mikkel@pop-os','work@pop-os'))
+    parser.add_argument('--peer',required=True,choices=sorted(PEERS))
     parser.add_argument('--action',choices=('bootstrap','cleanup','revoke-account','revoke-session','adopt'),default='bootstrap')
     parser.add_argument('--participant')
     parser.add_argument('--native-id',help='Inventory-confirmed native ID or disclosed legacy account-local binding')

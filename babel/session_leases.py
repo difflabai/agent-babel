@@ -12,7 +12,7 @@ from pathlib import Path
 from .core import BridgeError, fields
 from .participants import digest
 
-PEERS = frozenset(('mikkel@pop-os', 'work@pop-os'))
+PEERS = frozenset(('mikkel@pop-os', 'work@pop-os', 'ntc@laptop'))
 EMBER = 'bits255.dots.ada_20261002'
 IDLE_SECONDS = 86400
 CLIENTS = frozenset(('codex', 'claude', 'cursor', 'opencode', 'grokbot'))
@@ -52,7 +52,7 @@ class SessionLeases:
         if not isinstance(config['accounts'], dict) or not config['accounts']:
             raise BridgeError('Explicit trusted accounts required')
         if set(config['accounts']) - PEERS:
-            raise BridgeError('Only explicitly approved Pop UNIX accounts are eligible')
+            raise BridgeError('Only explicitly approved UNIX accounts are eligible')
         for account, entry in config['accounts'].items():
             fields(entry, ('enabled', 'clients'), ('enabled', 'clients'))
             if (type(entry['enabled']) is not bool or not isinstance(entry['clients'], list)
