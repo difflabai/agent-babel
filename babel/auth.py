@@ -104,6 +104,8 @@ class Policy:
         if self.multi_owner:
             if (conversation,source,recipient) not in self.routes:
                 raise BridgeError("Conversation route is not permitted",403)
+            if (conversation,source,recipient) in getattr(self, 'return_route_additions', {}):
+                self.return_route_guard.assert_route(self, (conversation,source,recipient))
         elif conversation is not None or recipient not in self.agents[source][1]:
             raise BridgeError("Agent route is not permitted",403)
 

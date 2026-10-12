@@ -22,11 +22,17 @@ def main():
     add_parser(modes)
     from .session_operator import add_parser as add_session_parser
     add_session_parser(modes)
+    from .return_routes import add_parser as add_return_route_parser
+    add_return_route_parser(modes)
     args = parser.parse_args()
     if hasattr(args, "port") and not 0 <= args.port <= 65535:
         parser.error("--port must be 0–65535 (0 selects a free port)")
     try:
-        if args.mode == "trusted-session":
+        if args.mode == "return-route":
+            import json
+            from .return_routes import run as return_route_command
+            print(json.dumps(return_route_command(args)),flush=True)
+        elif args.mode == "trusted-session":
             import json
             from .session_operator import run as session_command
             print(json.dumps(session_command(args)),flush=True)

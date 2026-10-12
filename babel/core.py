@@ -126,6 +126,8 @@ class Store:
         self.db.commit()
         if str(self.path) != ":memory:":
             os.chmod(self.path, 0o600)
+        from .return_routes import ReturnRoutes
+        self.return_routes = ReturnRoutes(self)
 
     def trusted_session_row(self, participant):
         with self.lock:
@@ -134,14 +136,16 @@ class Store:
             return dict(row) if row else None
 
     def authorized_policy(self, policy):
-        if self.sessions:return self.sessions.project(policy)
+        policy = self.return_routes.strip(policy)
+        if self.sessions:
+            return self.return_routes.project(self.sessions.project(policy))
         with self.lock:
             exists=self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='trusted_sessions'").fetchone()
             any_leased=exists and self.db.execute('SELECT 1 FROM trusted_sessions LIMIT 1').fetchone()
         if any_leased:
             from .session_leases import suspended_policy
-            return suspended_policy(self,policy)
-        return policy
+            policy = suspended_policy(self,policy)
+        return self.return_routes.project(policy)
 
     def sync_policy(self, policy):
         from .registry import synchronize
