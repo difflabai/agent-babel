@@ -87,6 +87,8 @@ class Policy:
         return role
 
     def assert_active(self, role):
+        if getattr(self, "session_leases", None):
+            self.session_leases.assert_active(role, self.session_generations.get(role))
         if role not in self.agents: raise BridgeError("Participant access is unavailable",403)
         if self.multi_owner:
             entry=self.participants[role]; now=time.time()
@@ -159,18 +161,24 @@ class ScopedStore:
     """Defense in depth: only authenticated role and permitted outgoing routes."""
     def __init__(self, store, role, recipients, policy=None):
         self.store, self.role, self.recipients = store, role, recipients
-        self.policy=policy
-        if policy: store.sync_policy(policy)
+        self.policy=store.authorized_policy(policy) if policy else None
+        self.authorization_digest=self.policy.agents.get(role,(None,))[0] if self.policy else None
+        if self.policy: store.sync_policy(self.policy)
 
     def guard(self):
         if not self.policy: return
         if getattr(self.policy,"source_file",None):
-            latest=Policy.load(self.policy.source_file)
+            latest=self.store.authorized_policy(Policy.load(self.policy.source_file))
             self.store.sync_policy(latest)
-            if latest.agents.get(self.role,(None,))[0]!=self.policy.agents.get(self.role,(None,))[0]:
+            if latest.agents.get(self.role,(None,))[0]!=self.authorization_digest:
                 raise BridgeError("Participant authorization changed",403)
             self.policy=latest
-        else: self.store.sync_policy(self.policy)
+        else:
+            latest=self.store.authorized_policy(self.policy)
+            self.store.sync_policy(latest)
+            if latest.agents.get(self.role,(None,))[0]!=self.authorization_digest:
+                raise BridgeError("Participant authorization changed",403)
+            self.policy=latest
         self.policy.assert_active(self.role)
 
     def stage(self, source, recipient, **kwargs):

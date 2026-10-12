@@ -9,9 +9,10 @@ from .server import Handler, HTTP_VERSIONS, BoundedServer
 from .wake import WakeConfig
 from .events import EventService
 from . import mcp2
+from .channel_events import ApprovalSource, STREAM_HEADER, STREAM_VERSION, MAX_STREAMS, cursor
 
 class Gateway(BoundedServer):
-    def __init__(self, port, policy, origin, store=None, host="127.0.0.1", wake_config=None, transport=None, synthetic_trial=False):
+    def __init__(self, port, policy, origin, store=None, host="127.0.0.1", wake_config=None, transport=None, synthetic_trial=False, channel_recipients=()):
         # Validate all security configuration BEFORE listening or opening storage.
         self.origin = public_origin(origin)
         self.policy = policy
@@ -23,6 +24,14 @@ class Gateway(BoundedServer):
             raise BridgeError("An explicit authentication policy is required")
         if type(synthetic_trial) is not bool or (synthetic_trial and not policy.multi_owner):
             raise BridgeError("Synthetic trial requires an explicit participant policy")
+        if (not isinstance(channel_recipients, (tuple, list)) or len(channel_recipients) > MAX_STREAMS
+                or any(not isinstance(r, str) for r in channel_recipients)
+                or len(set(channel_recipients)) != len(channel_recipients)):
+            raise BridgeError("Channel recipients must be an explicit bounded list")
+        for role in channel_recipients:
+            policy.assert_active(role)
+            if not policy.multi_owner or policy.participants[role]["client"] != "claude" or not policy.agents[role][0]:
+                raise BridgeError("Channel stream requires an existing static Claude participant")
         self.synthetic = None
         if synthetic_trial:
             from .synthetic import SyntheticTransfers
@@ -30,17 +39,35 @@ class Gateway(BoundedServer):
         self.hosts = {urlsplit(self.origin).netloc}
         self.origins = {self.origin}
         self.store = store if store is not None else Store()
-        self.store.sync_policy(policy)
+        self.policy=self.store.authorized_policy(policy)
+        self.store.sync_policy(self.policy)
         self.wake_config=wake_config or WakeConfig()
         self.transport=transport
-        self.events = EventService(self.store, policy, wake_config or WakeConfig(), transport)
+        self.events = EventService(self.store, self.policy, wake_config or WakeConfig(), transport)
+        self.approvals = None
         super().__init__((host, port), GatewayHandler)
         self.port = self.server_address[1]
+
+        try:
+            if channel_recipients:
+                self.approvals = ApprovalSource(self.store, channel_recipients)
+        except Exception:
+            super().server_close()
+            raise
+
+    def server_close(self):
+        if self.approvals:
+            self.approvals.close()
+        super().server_close()
 
     def service_actions(self):
         # The existing server loop expires RAM payloads even with no tool traffic.
         if self.synthetic is not None:
             self.synthetic.expire()
+        if self.store.sessions:
+            try:self.store.sessions.cleanup()
+            except BridgeError as exc:
+                if exc.status!=503:raise
 
     def current_policy(self):
         with self.policy_lock:
@@ -49,8 +76,9 @@ class Gateway(BoundedServer):
                 if hasattr(latest,"oauth") and latest.oauth["resource"]!=self.origin+"/mcp":
                     raise BridgeError("OAuth resource does not match this gateway",503)
                 latest.lock=self.policy.lock; latest.requests=self.policy.requests
-                self.store.sync_policy(latest)
                 self.policy=latest
+            self.policy=self.store.authorized_policy(self.policy)
+            self.store.sync_policy(self.policy)
             return self.policy
 
 class GatewayHandler(Handler):
@@ -101,12 +129,29 @@ class GatewayHandler(Handler):
                           {"resource":self.server.origin+"/mcp", "bearer_methods_supported":["header"]})
                 self.respond(200,metadata)
                 return
-            self.authorize()
+            role = self.authorize()
             if self.path not in ("/mcp", "/mcp/v1"):
                 raise BridgeError("Not found", 404)
+            if self.path == "/mcp/v1" and self.headers.get(STREAM_HEADER):
+                if not self.server.approvals:
+                    raise BridgeError("Approval stream is disabled", 404)
+                if self.headers.get_all(STREAM_HEADER) != [STREAM_VERSION]:
+                    raise BridgeError("Unsupported approval stream version")
+                if self.headers.get_all("MCP-Protocol-Version") != ["2025-11-25"]:
+                    raise BridgeError("Approval stream requires MCP 2025-11-25")
+                if "text/event-stream" not in self.headers.get("Accept", ""):
+                    raise BridgeError("Approval stream requires text/event-stream", 406)
+                if len(self.headers.get_all("Last-Event-ID", [])) > 1:
+                    raise BridgeError("Exactly one approval cursor is permitted")
+                after = cursor(self.headers.get("Last-Event-ID"))
+                self.server.approvals.serve(self, role, self.request_policy.agents[role][0], after)
+                return
             self.respond(405, {"error": "JSON POST only; no SSE stream"}, extra={"Allow": "POST"})
         except BridgeError as exc:
-            self.fail(exc)
+            if getattr(self, "approval_stream_started", False):
+                self.close_connection = True  # Never append JSON to an open SSE frame.
+            else:
+                self.fail(exc)
         except (TimeoutError, OSError):
             self.close_connection = True
 
@@ -170,8 +215,14 @@ def run_gateway(port, auth_file, origin, host="127.0.0.1", wake_file=None):
     trial = os.environ.get("BABEL_SYNTHETIC_TRIAL", "0")
     if trial not in ("0", "1"):
         raise BridgeError("BABEL_SYNTHETIC_TRIAL must be 0 or 1")
-    server = Gateway(port, Policy.load(auth_file), origin, host=host,
-                     wake_config=WakeConfig.load(wake_file), synthetic_trial=trial == "1")
+    recipients = os.environ.get("BABEL_CHANNEL_RECIPIENTS", "")
+    store=Store()
+    if os.environ.get("BABEL_TRUSTED_ACCOUNTS_FILE"):
+        from .session_leases import SessionLeases, load_accounts
+        SessionLeases(store,load_accounts(os.environ["BABEL_TRUSTED_ACCOUNTS_FILE"]))
+    server = Gateway(port, Policy.load(auth_file), origin, store=store, host=host,
+                     wake_config=WakeConfig.load(wake_file), synthetic_trial=trial == "1",
+                     channel_recipients=tuple(recipients.split(",")) if recipients else ())
     print("Agent Babel authenticated gateway ready; operator controls are private.", flush=True)
     try:
         server.serve_forever()

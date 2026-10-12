@@ -43,6 +43,9 @@ class Server(BoundedServer):
     def __init__(self, port, store=None, container=False):
         super().__init__(("0.0.0.0" if container else "127.0.0.1", port), Handler)
         self.store = store if store is not None else Store()
+        if os.environ.get("BABEL_TRUSTED_ACCOUNTS_FILE"):
+            from .session_leases import SessionLeases, load_accounts
+            SessionLeases(self.store,load_accounts(os.environ["BABEL_TRUSTED_ACCOUNTS_FILE"]))
         self.policy_file=os.environ.get("BABEL_AUTH_FILE")
         self.store.policy_provider=self.current_policy if self.policy_file else None
         if self.policy_file: self.store.sync_policy(self.current_policy())
@@ -53,7 +56,7 @@ class Server(BoundedServer):
 
     def current_policy(self):
         from .auth import Policy
-        return Policy.load(self.policy_file) if self.policy_file else None
+        return self.store.authorized_policy(Policy.load(self.policy_file)) if self.policy_file else None
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AgentBabel/0.4"

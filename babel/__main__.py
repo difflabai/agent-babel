@@ -20,11 +20,17 @@ def main():
     modes.add_parser("backup", help="Online SQLite backup inside configured bridge data/backups")
     from .enrollment import add_parser
     add_parser(modes)
+    from .session_operator import add_parser as add_session_parser
+    add_session_parser(modes)
     args = parser.parse_args()
     if hasattr(args, "port") and not 0 <= args.port <= 65535:
         parser.error("--port must be 0–65535 (0 selects a free port)")
     try:
-        if args.mode == "policy":
+        if args.mode == "trusted-session":
+            import json
+            from .session_operator import run as session_command
+            print(json.dumps(session_command(args)),flush=True)
+        elif args.mode == "policy":
             from .enrollment import edit
             options={k:v for k,v in vars(args).items() if k not in ("mode","file","policy_action")}
             edit(args.file,args.policy_action,**options)
@@ -50,6 +56,9 @@ def main():
             if not config.enabled:
                 raise BridgeError("Wake delivery is disabled")
             store = Store()
+            if os.environ.get("BABEL_TRUSTED_ACCOUNTS_FILE"):
+                from .session_leases import SessionLeases, load_accounts
+                SessionLeases(store,load_accounts(os.environ["BABEL_TRUSTED_ACCOUNTS_FILE"]))
             try:
                 while True:
                     # Recheck recipient access and callback allowlists for every attempt.

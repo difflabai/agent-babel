@@ -57,7 +57,11 @@ class Store:
     def __init__(self, path=None):
         self.path = path if path is not None else default_database()
         self.lock = threading.RLock()
+        self.approval_condition = threading.Condition()
+        self.approval_generation = 0
+        self._approval_pending = False
         self.policy_provider=None
+        self.sessions=None
         self.db = sqlite3.connect(str(self.path), timeout=5, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -123,6 +127,22 @@ class Store:
         if str(self.path) != ":memory:":
             os.chmod(self.path, 0o600)
 
+    def trusted_session_row(self, participant):
+        with self.lock:
+            if not self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='trusted_sessions'").fetchone():return None
+            row=self.db.execute('SELECT * FROM trusted_sessions WHERE participant=?',(participant,)).fetchone()
+            return dict(row) if row else None
+
+    def authorized_policy(self, policy):
+        if self.sessions:return self.sessions.project(policy)
+        with self.lock:
+            exists=self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='trusted_sessions'").fetchone()
+            any_leased=exists and self.db.execute('SELECT 1 FROM trusted_sessions LIMIT 1').fetchone()
+        if any_leased:
+            from .session_leases import suspended_policy
+            return suspended_policy(self,policy)
+        return policy
+
     def sync_policy(self, policy):
         from .registry import synchronize
         synchronize(self,policy)
@@ -148,12 +168,28 @@ class Store:
     def transaction(self):
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
+            self._approval_pending = False
             try:
                 yield
                 self.db.commit()
             except Exception:
                 self.db.rollback()
                 raise
+            else:
+                if self._approval_pending:
+                    self.signal_approval()
+            finally:
+                self._approval_pending = False
+
+    def signal_approval(self):
+        # Signal only after commit; the signal contains no message or credential.
+        # A disconnected gateway recovers queued approvals from durable storage.
+        with self.approval_condition:
+            self.approval_generation += 1
+            self.approval_condition.notify_all()
+        if str(self.path) != ":memory:":
+            from .channel_events import notify_gateway
+            notify_gateway(self.path)
 
     def _row(self, message_id):
         row = self.db.execute("SELECT * FROM messages WHERE id=?", (identifier(message_id),)).fetchone()
@@ -164,6 +200,8 @@ class Store:
     def _event(self, message_id, action, actor):
         self.db.execute("INSERT INTO events(message_id, action, actor, created) VALUES(?,?,?,?)",
                         (message_id, action, actor, time.time()))
+        if action == "approved":
+            self._approval_pending = True
 
     def stage(self, source, recipient, text, message_id=None, reply_to=None, provenance="manual", conversation_id=None, policy=None):
         agent(source); agent(recipient)
@@ -173,6 +211,8 @@ class Store:
             raise BridgeError("Message must contain text and be at most 16 KiB in UTF-8")
         if provenance not in ("manual", "mcp"):
             raise BridgeError("Unsupported provenance")
+        if self.trusted_session_row(source) and message_id is None:
+            raise BridgeError("Leased session reports require a stable message_id for retries",409)
         message_id = identifier(message_id) if message_id is not None else str(uuid.uuid4())
         if reply_to is not None:
             identifier(reply_to)
@@ -183,6 +223,8 @@ class Store:
             self.sync_policy(policy); policy.assert_route(conversation_id,source,recipient)
             source_owner=policy.participants[source]["owner"]; recipient_owner=policy.participants[recipient]["owner"]
         with self.transaction():
+            if policy:
+                policy.assert_route(conversation_id, source, recipient)
             existing = self.db.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
             if existing:
                 existing = dict(existing)
@@ -220,6 +262,8 @@ class Store:
                 VALUES(?,?,?,?,?,?,?,'draft',?,?)""",
                 (message_id, source, recipient, text, reply_to, root_id, hops, provenance, now))
             self.db.execute("UPDATE messages SET conversation_id=?,source_owner=?,recipient_owner=? WHERE id=?",(conversation_id,source_owner,recipient_owner,message_id))
+            if self.sessions and provenance == "mcp":
+                self.sessions.report_activity(source, message_id, text)
             self._event(message_id, "staged", provenance + ":" + source)
             if policy and policy.auto_approves(conversation_id,source,recipient):
                 self.db.execute("UPDATE messages SET status='queued',approved=? WHERE id=?",(now,message_id))

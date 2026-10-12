@@ -17,6 +17,13 @@ def synchronize(store, policy):
                 raise BridgeError("OAuth principal and instance bindings cannot be recycled or reassigned")
             store.db.execute("INSERT OR IGNORE INTO oauth_bindings VALUES(?,?)",(fingerprint,pid))
         for pid, entry in policy.participants.items():
+            leased=store.trusted_session_row(pid)
+            if pid in getattr(policy,"session_dynamic_roles",()):continue
+            if leased and entry['state']=='active':continue
+            if leased and entry['state'] in ('closed','revoked'):
+                store.db.execute("UPDATE trusted_sessions SET state='revoked',generation=generation+1 WHERE participant=? AND state!='revoked'",(pid,))
+                from .session_leases import stop_owned
+                stop_owned(store,pid,'trust_revoked')
             old=previous.get(pid)
             binding=(entry["owner"],entry["client"],entry["session"])
             if old and tuple(old[k] for k in ("owner","client","session"))!=binding:
@@ -45,11 +52,19 @@ def synchronize(store, policy):
                 # A removed identity leaves an irreversible tombstone.
                 if static: store.db.execute("UPDATE credential_bindings SET retired=1 WHERE digest=?",(static,))
         for pid in previous.keys()-policy.participants.keys():
+            leased=store.trusted_session_row(pid)
+            if leased:
+                if leased['profile']=='ember_outbound':continue
+                store.db.execute("UPDATE trusted_sessions SET state='revoked',generation=generation+1 WHERE participant=? AND state!='revoked'",(pid,))
+                from .session_leases import stop_owned
+                stop_owned(store,pid,'trust_revoked')
             store.db.execute("UPDATE participant_bindings SET state='revoked' WHERE id=?",(pid,))
             store.db.execute("UPDATE credential_bindings SET retired=1 WHERE participant=?",(pid,))
         # Authorization fingerprints also include conversation grants. Any policy
         # reduction stops pending notifications; new grants require resubscription.
         for sub in store.db.execute("SELECT id,role,auth_digest FROM subscriptions WHERE active=1").fetchall():
+            if store.trusted_session_row(sub["role"]):
+                continue  # Lifecycle owns these resources; idle is resumable.
             current=policy.agents.get(sub["role"])
             try: policy.assert_active(sub["role"])
             except BridgeError: current=None

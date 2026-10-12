@@ -40,9 +40,9 @@ class EventError(Exception):
 
 class EventService:
     def __init__(self, store, policy, config, transport=None):
-        self.store, self.policy, self.config = store, policy, config
+        self.store, self.policy, self.config = store, store.authorized_policy(policy), config
         self.transport = transport or WebhookTransport(config)
-        self.store.sync_policy(policy)
+        self.store.sync_policy(self.policy)
         self.sync_grok()
 
     def sync_grok(self):
@@ -192,7 +192,7 @@ class EventService:
         policy=self.policy
         if getattr(policy,"source_file",None):
             from .auth import Policy
-            policy=Policy.load(policy.source_file)
+            policy=self.store.authorized_policy(Policy.load(policy.source_file))
             self.store.sync_policy(policy)
             if policy.agents.get(role,(None,))[0]!=self.policy.agents.get(role,(None,))[0]:
                 raise BridgeError("Participant authorization changed",403)
@@ -200,6 +200,10 @@ class EventService:
         if row is not None: policy.check_row(row)
 
     def claim(self, now=None):
+        if self.store.sessions:
+            try:self.store.sessions.cleanup()
+            except BridgeError as exc:
+                if exc.status!=503:raise
         now = time.time() if now is None else now
         with self.store.transaction():
             self.store.db.execute("UPDATE outbox SET status='dead',last_error='attempt_limit' WHERE status='leased' AND lease_until<=? AND attempts>=?", (now, MAX_ATTEMPTS))
@@ -266,7 +270,17 @@ class EventService:
             except CallbackError as exc:
                 error = "uncertain_timeout" if exc.reason == "timeout" else exc.reason
                 terminal = error in ("challenge_failed", "http_4xx")
-            except BridgeError:
+            except BridgeError as exc:
+                sessions=self.store.sessions
+                idle=any(sessions.row(pid) and (sessions.row(pid)["state"]=="idle_expired" or sessions.row(pid)["deadline"]<=sessions.clock())
+                         for pid in (message["source"],message["recipient"])) if sessions else False
+                leased=any(self.store.trusted_session_row(pid) for pid in (message['source'],message['recipient']))
+                clock_blocked=exc.status==503 and leased
+                lifecycle_disabled=not sessions and leased
+                if idle or clock_blocked or lifecycle_disabled:
+                    with self.store.transaction():
+                        self.store.db.execute("UPDATE outbox SET status='parked',last_error='idle_expired',lease_token=NULL,lease_until=NULL WHERE seq=? AND lease_token=?",(row["seq"],row["lease_token"]))
+                    return True
                 error, terminal = "access_revoked", True
             except Exception:
                 error = "transport_error"
