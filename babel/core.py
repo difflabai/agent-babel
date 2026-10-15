@@ -183,6 +183,12 @@ class Store:
             self.sync_policy(policy); policy.assert_route(conversation_id,source,recipient)
             source_owner=policy.participants[source]["owner"]; recipient_owner=policy.participants[recipient]["owner"]
         with self.transaction():
+            if policy:
+                policy.assert_route(conversation_id, source, recipient)
+            from .session_replies import reply_routes
+            reply_only = policy and (conversation_id,source,recipient) in reply_routes(policy)
+            if reply_only and not reply_to:
+                raise BridgeError("Auto-session return routes require reply_to an approved incoming message",403)
             existing = self.db.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
             if existing:
                 existing = dict(existing)
@@ -202,6 +208,10 @@ class Store:
                     raise BridgeError("Replies cannot change conversation",403)
                 if parent["recipient"] != source or parent["source"] != recipient:
                     raise BridgeError("A reply must reverse the parent route", 409)
+                if reply_only:
+                    policy.check_row(parent)
+                    if parent["provenance"] != "mcp":
+                        raise BridgeError("Auto-session replies require an authenticated incoming message",403)
                 hops, root_id = parent["hops"] + 1, parent["root_id"]
             hop_limit = policy.hop_limit(conversation_id) if policy else MAX_HOPS
             if hops > hop_limit:
