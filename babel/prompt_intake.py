@@ -221,22 +221,37 @@ def pending(root, peer, sid, cutoff, floor=(0,0), current_boot=None, boot_change
                 continue
             if not entry.name.endswith('.json'):
                 continue
+            # Keep ownership/mode/symlink checks outside content recovery. Only
+            # names emitted by publish() may be removed as corrupt intake.
             try:
                 path = private(entry.path)
-                if os.stat(path).st_size > 1024:
+                size = os.stat(path).st_size
+            except FileNotFoundError:
+                continue
+            try:
+                if size > 1024:
                     raise ValueError('Prompt intake record too large')
                 with open(path) as f:
                     value = json.load(f)
+                if (not isinstance(value,dict) or set(value) != {'schema_version','boot_id','native_id','turn_id','meaningful','order'} or
+                        type(value['schema_version']) is not int or value['schema_version'] != 2 or value['native_id'] != sid or type(value['meaningful']) is not bool or
+                        not isinstance(value['boot_id'],str) or not UUID.fullmatch(value['boot_id']) or
+                        not isinstance(value['order'], list) or len(value['order']) != 2 or
+                        any(type(n) is not int or n <= 0 for n in value['order']) or
+                        (value['turn_id'] is not None and (not isinstance(value['turn_id'],str) or not UUID.fullmatch(value['turn_id'])))):
+                    raise ValueError('Invalid prompt intake record')
             except FileNotFoundError:
                 continue
-            if isinstance(value,dict) and value.get('schema_version') == 1:
-                garbage.append(entry.name);continue  # Pre-upgrade intake has no boot binding.
-            if (not isinstance(value,dict) or set(value) != {'schema_version','boot_id','native_id','turn_id','meaningful','order'} or
-                    type(value['schema_version']) is not int or value['schema_version'] != 2 or value['native_id'] != sid or type(value['meaningful']) is not bool or
-                    not isinstance(value['order'], list) or len(value['order']) != 2 or
-                    any(type(n) is not int or n <= 0 for n in value['order']) or
-                    (value['turn_id'] is not None and (not isinstance(value['turn_id'],str) or not UUID.fullmatch(value['turn_id'])))):
-                raise ValueError('Invalid prompt intake record')
+            except (ValueError, RecursionError):
+                published = (re.fullmatch(r'p-[0-9]{21}-[0-9]{21}-[a-f0-9]{24}\.json',entry.name)
+                             or (entry.name.startswith('t-') and UUID.fullmatch(entry.name[2:-5])))
+                if not published:
+                    raise  # Unexpected private files require reconciliation.
+                # Its boot/order/eligibility may be unreadable, including on the
+                # first completion after reboot. Commit an ineligible completion
+                # before deleting this record; never guess that it is old input.
+                failed.append(entry.name)
+                continue
             if value['boot_id'] != current_boot:
                 garbage.append(entry.name);continue
             if tuple(value['order']) <= tuple(cutoff):

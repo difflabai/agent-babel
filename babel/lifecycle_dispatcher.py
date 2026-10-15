@@ -93,6 +93,10 @@ class Dispatcher:
                     db.execute("INSERT OR REPLACE INTO turns VALUES('claude-pending',?,0)", (int(item['meaningful']),))
                     db.execute("INSERT OR REPLACE INTO state VALUES('claude_pending_order',?)", (json.dumps(item['order']),))
         if failed:
+            # Corrupt intake may have been a notification invalidating any
+            # unfinished prompt, including explicit IDs already committed by a
+            # prior consume/retry. Finished IDs and durable events stay intact.
+            db.execute('UPDATE turns SET meaningful=0 WHERE finished=0')
             db.execute("INSERT OR REPLACE INTO turns VALUES('claude-pending',0,0)")
         db.commit()  # Commit eligibility before deleting retryable local intake.
         for name, _ in records:

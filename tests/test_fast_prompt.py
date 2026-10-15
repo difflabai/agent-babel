@@ -257,3 +257,108 @@ runpy.run_path('account_lifecycle_hook.py',run_name='__main__')
         with patch.object(prompt_intake,'boot_id',return_value='30000000-0000-4000-8000-000000000001'):
             self.finish()
         self.assertEqual(len(self.records('claude')),1)
+
+    def malformed_published_cases(self, raw):
+        for explicit in (False, True):
+            for reboot in (False, True):
+                with self.subTest(explicit_turn=explicit, reboot=reboot):
+                    sid = '20000000-0000-4000-8000-'+str(10+2*int(explicit)+int(reboot)).zfill(12)
+                    def hook(event, **kwargs):
+                        return self.hook(event, client='claude', sid=sid, **kwargs)
+                    hook('SessionStart')
+                    hook('UserPromptSubmit', prompt='Complete the historical task.', turn_id=TURN)
+                    hook('MessageDisplay', turn_id=TURN, final=True)
+                    history=self.records('claude',sid)
+                    # Persist earlier eligibility before the malformed invalidation.
+                    hook('UserPromptSubmit', prompt='An earlier meaningful prompt.',
+                         **({'turn_id': TURN2} if explicit else {}))
+                    ctx={'client':'claude','native_id':sid,'kind':'bootstrap','event_id':'bootstrap:'+sid}
+                    path=self.helper.path(ctx)
+                    with sqlite3.connect(path/'lifecycle.sqlite3') as db:
+                        self.dispatcher.consume_prompts(db,ctx,prompt_intake.observation(lambda:self.now))
+                    hook('UserPromptSubmit', prompt='Babel mailbox notification',
+                         **({'turn_id': TURN2} if explicit else {}))
+                    folder=Path(prompt_intake.location(self.helper.root,self.helper.peer,sid)[1])
+                    corrupt=next(folder.glob('*.json'))
+                    corrupt.write_bytes(raw)
+                    boot='30000000-0000-4000-8000-000000000001' if reboot else prompt_intake.boot_id()
+                    with patch.object(prompt_intake,'boot_id',return_value=boot):
+                        result=hook('MessageDisplay',turn_id=TURN2,final=True)
+                        self.assertFalse(result['activity_queued'])
+                        self.assertFalse(corrupt.exists())
+                        hook('MessageDisplay',turn_id=TURN2,final=True)
+                        self.assertEqual(self.records('claude',sid),history)
+                        with sqlite3.connect(path/'lifecycle.sqlite3') as db:
+                            self.assertEqual(db.execute('SELECT meaningful,finished FROM turns WHERE id=?',(TURN,)).fetchone(),(1,1))
+                            self.assertEqual(db.execute('SELECT COUNT(*) FROM turns WHERE finished=0 AND meaningful=1').fetchone()[0],0)
+                        fresh='10000000-0000-4000-8000-000000000099'
+                        hook('UserPromptSubmit',prompt='Implement the fresh task.',
+                             **({'turn_id':fresh} if explicit else {}))
+                        hook('MessageDisplay',turn_id=fresh,final=True)
+                        hook('MessageDisplay',turn_id=fresh,final=True)
+                        self.assertEqual(len(self.records('claude',sid)),3)
+
+    def test_empty_published_p_and_t_records_recover_same_boot_and_after_reboot(self):
+        self.malformed_published_cases(b'')
+
+    def test_truncated_published_p_and_t_records_recover_same_boot_and_after_reboot(self):
+        self.malformed_published_cases(b'{"schema_version":2,"boot_id":')
+
+    def test_invalid_published_p_and_t_records_recover_same_boot_and_after_reboot(self):
+        self.malformed_published_cases(b'{"schema_version":2,"meaningful":"yes"}')
+
+    def test_oversized_published_p_and_t_records_recover_same_boot_and_after_reboot(self):
+        self.malformed_published_cases(b'x'*1025)
+
+    def test_invalid_utf8_published_records_recover_same_boot_and_after_reboot(self):
+        self.malformed_published_cases(b'\xff\xfe')
+
+    def test_invalid_legacy_schema_records_cannot_borrow_committed_eligibility(self):
+        self.malformed_published_cases(b'{"schema_version":1}')
+
+    def test_corrupt_published_record_cleanup_retry_preserves_ineligibility(self):
+        self.hook(client='claude');self.prompt()
+        corrupt=next(self.journal().glob('*.json'));corrupt.write_bytes(b'')
+        with patch.object(prompt_intake,'remove',side_effect=OSError('synthetic cleanup crash')):
+            with self.assertRaises(OSError):self.finish()
+        self.assertTrue(corrupt.exists())
+        self.finish();self.assertFalse(corrupt.exists())
+        self.assertEqual(len(self.records('claude')),1)
+        self.prompt();self.finish(TURN2);self.finish(TURN2)
+        self.assertEqual(len(self.records('claude')),2)
+
+    def test_decoder_recursion_failure_recovers_without_fabricating_activity(self):
+        self.hook(client='claude');self.prompt()
+        with patch.object(prompt_intake.json,'load',side_effect=RecursionError('synthetic decoder depth')):
+            self.assertFalse(self.finish()['activity_queued'])
+        self.assertFalse(list(self.journal().glob('*.json')))
+        self.assertEqual(len(self.records('claude')),1)
+        self.prompt();self.finish(TURN2)
+        self.assertEqual(len(self.records('claude')),2)
+
+    def test_corrupt_published_records_retain_owner_mode_and_symlink_guards(self):
+        for explicit in (False,True):
+            for guard in ('owner','mode','symlink'):
+                with self.subTest(explicit_turn=explicit,guard=guard):
+                    sid='20000000-0000-4000-8000-'+str(50+3*int(explicit)+('owner','mode','symlink').index(guard)).zfill(12)
+                    self.hook(client='claude',sid=sid)
+                    self.hook('UserPromptSubmit',client='claude',sid=sid,prompt='Real task.',
+                              **({'turn_id':TURN} if explicit else {}))
+                    folder=Path(prompt_intake.location(self.helper.root,self.helper.peer,sid)[1])
+                    corrupt=next(folder.glob('*.json'));corrupt.write_bytes(b'')
+                    check=prompt_intake.private
+                    def owned(path,directory=False):
+                        if guard=='owner' and os.fspath(path)==str(corrupt):
+                            raise ValueError('Synthetic foreign owner')
+                        return check(path,directory)
+                    if guard=='mode':corrupt.chmod(0o644)
+                    target=self.root/('unrelated-'+sid)
+                    if guard=='symlink':
+                        target.write_bytes(b'Unrelated private content');target.chmod(0o600)
+                        corrupt.unlink();corrupt.symlink_to(target)
+                    with patch.object(prompt_intake,'private',side_effect=owned):
+                        with self.assertRaises(ValueError):
+                            self.hook('MessageDisplay',client='claude',sid=sid,turn_id=TURN,final=True)
+                    self.assertTrue(corrupt.exists())
+                    if guard=='symlink':self.assertEqual(target.read_bytes(),b'Unrelated private content')
+                    if guard=='mode':self.assertEqual(corrupt.stat().st_mode&0o777,0o644)

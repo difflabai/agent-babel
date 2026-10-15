@@ -28,6 +28,14 @@ unfinished eligibility is conservatively cleared before consuming new boot-bound
 records; finished IDs and durable event history remain intact. This prevents lost
 pre-crash invalidations from lending an old real prompt to a later notification.
 
+An empty, truncated, invalid or oversized published prompt record makes the
+affected completion ineligible, including when the record's boot is unreadable.
+The consumer first commits that decision for all unfinished eligibility, retaining
+finished IDs/events, then removes the corrupt record. A fresh prompt can proceed;
+bad content does not permanently block completions or roll back boot recovery.
+Ownership, private modes and symlink checks still reject unsafe paths. Unexpected
+private filenames require reconciliation rather than automatic deletion.
+
 A lightweight per-session marker emits the existing reporting advisory once.
 Existing sessions may receive that advisory once again after upgrading. The
 marker is advisory metadata and never grants access or renews a lease.
@@ -38,3 +46,12 @@ existing backend files, and records source hashes and a rollback snapshot. It
 never installs hooks, changes settings, enrolls an account, contacts a service,
 or restarts native sessions. Existing approved hooks load the new code on their
 next callback. The server's trusted-session backend remains a separate prerequisite.
+
+Existing conservative limits remain: wall-clock-first observation order may reject
+work after a clock correction; a `.pending` writer observed by completion makes
+that completion ineligible; and the 8192-event/turn evidence cap stops admission
+rather than deleting deduplication history. This recovery repair does not change
+those boundaries. Corrupt journal decoder recursion errors follow the same
+ineligible-and-remove path; deeply nested native hook input remains a separate
+input-hardening concern. Installer process/machine termination recovery is described
+in the package guide and still requires inspecting its source-only snapshot.
