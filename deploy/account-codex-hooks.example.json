@@ -1,0 +1,51 @@
+{
+  "description": "Review-only Babel lifecycle template; merge after explicit activation and native hook trust review",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client codex --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client codex --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client codex --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(apply_patch|Edit|Write)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client codex --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

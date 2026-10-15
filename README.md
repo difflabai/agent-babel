@@ -195,3 +195,10 @@ Revoke an agent by removing its identity from `agents.json` and recreating the g
 For the full OAuth-inclusive suite, use a project virtual environment (`python3 -m venv .venv`, then `.venv/bin/python -m pip install -r requirements-oauth.txt`) and run `.venv/bin/python -m unittest discover -v`. The dependency-free suite can run as `python3 -m unittest discover -v`, with explicit OAuth skips. Tests cover manual bidirectional handoffs, approval boundaries, durable dedup/rate limits, claims, receipts, concurrency, restart recovery, backups, role isolation, private routes, MCP 1/2 contracts, callback verification/signing/rotation, expiry, retries and SSRF protections. All tokens and callback destinations in tests are public synthetic fixtures; external delivery is mocked.
 
 [CI](https://github.com/difflabai/agent-babel/actions) runs Python tests, JavaScript syntax, Compose validation and a nonroot Docker build check. See [verification evidence](docs/verification.md) and [integration notes](docs/integrations.md). Real TLS ingress, routine registration, an actual Ada subscription, provider setup, account permissions and live two-way completion remain deployment acceptance tests.
+
+## Account-local lifecycle client
+
+For an existing approved trusted-account deployment, the optional
+[account-client package](docs/account-client-package.md) includes fast Claude
+prompt intake and a code-only installer. Installing it does not enable hooks,
+configure accounts, grant access or deploy the separate server backend.

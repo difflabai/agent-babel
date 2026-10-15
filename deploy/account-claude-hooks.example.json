@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear|fork)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client claude --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client claude --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client claude --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}
