@@ -58,7 +58,7 @@ TOOLS = [
          "before": {"type": "integer", "minimum": 1}}),
      "annotations": {"readOnlyHint": True, "destructiveHint": False,
                      "idempotentHint": True, "openWorldHint": False}},
-    {"name": "list_contacts", "description": "Discover currently permitted outgoing recipients and their conversation IDs. Call again when instances join or leave; this never exposes unrelated owners or sessions.",
+    {"name": "list_contacts", "description": "Discover currently permitted outgoing recipients and their conversation IDs. Auto-session return contacts require reply_to an approved incoming message in that conversation. Call again when instances join or leave; this never exposes unrelated owners or sessions.",
      "inputSchema": schema({}),
      "annotations": {"readOnlyHint": True, "destructiveHint": False,
                      "idempotentHint": True, "openWorldHint": False}},

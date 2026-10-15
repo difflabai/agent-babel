@@ -8,6 +8,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 from .core import AGENTS, BridgeError, fields, MAX_HOPS
+from .session_replies import reply_routes
 
 TOKEN = re.compile(r"[A-Za-z0-9_-]{32,256}\Z")
 DIGEST = re.compile(r"[a-f0-9]{64}\Z")
@@ -100,7 +101,7 @@ class Policy:
             raise BridgeError("Invalid conversation route",403)
         self.assert_active(source); self.assert_active(recipient)
         if self.multi_owner:
-            if (conversation,source,recipient) not in self.routes:
+            if (conversation,source,recipient) not in self.routes and (conversation,source,recipient) not in reply_routes(self):
                 raise BridgeError("Conversation route is not permitted",403)
         elif conversation is not None or recipient not in self.agents[source][1]:
             raise BridgeError("Agent route is not permitted",403)
@@ -134,7 +135,7 @@ class Policy:
         if not self.multi_owner:
             return [(None,s,r) for s,entry in self.agents.items() for r in entry[1] if role in (s,r)]
         result=[]
-        for route in sorted(self.routes):
+        for route in sorted(self.routes | reply_routes(self)):
             if role in route[1:]:
                 try: self.assert_route(*route)
                 except BridgeError: continue
@@ -175,7 +176,11 @@ class ScopedStore:
 
     def stage(self, source, recipient, **kwargs):
         self.guard()
-        if not isinstance(source,str) or not isinstance(recipient,str) or source != self.role or recipient not in self.recipients:
+        if not isinstance(source,str) or not isinstance(recipient,str) or source != self.role:
+            raise BridgeError("Agent route is not permitted", 403)
+        # Only a current trusted return capability may extend a captured scope.
+        if recipient not in self.recipients and (not self.policy or
+                (kwargs.get("conversation_id"),source,recipient) not in reply_routes(self.policy)):
             raise BridgeError("Agent route is not permitted", 403)
         if self.policy:
             self.policy.assert_route(kwargs.get("conversation_id"),source,recipient)
