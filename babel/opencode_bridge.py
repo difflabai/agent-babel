@@ -8,9 +8,12 @@ The plugin confirms the exact native message before committing acceptance.
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sys
+import time
+from urllib.error import HTTPError
 
 from account_session_helper import Helper, TOOLS, bind_reviewed, private
 from babel.account_bootstrap import context, local_key
@@ -18,6 +21,78 @@ from babel.account_wake import (Delivery, Mailbox, Quarantined, fingerprint,
                                 locked, notice, read_json, write_json)
 from babel.core import BridgeError, identifier
 from babel.lifecycle_dispatcher import Dispatcher
+from babel.native_lifecycle import event_key
+
+
+def bootstrap_state(path, sid):
+    """Only fresh unaccepted evidence for this existing automatic identity."""
+    if any((path/name).exists() or (path/name).is_symlink() for name in
+           ('resume-token','resume-event.json','rotation-journal.json','token.pending')):
+        return None
+    manifest=read_json(path/'trusted-enrollment.json',4096)
+    evidence=path/'lifecycle-events'/(event_key('bootstrap:'+sid)[7:]+'.json')
+    if not evidence.exists() and not evidence.is_symlink():return None
+    request=read_json(evidence,4096)
+    if not isinstance(manifest,dict) or not isinstance(request,dict):
+        raise BridgeError('Invalid native enrollment metadata')
+    for value in (manifest,request):
+        sha=value.get('sha256')
+        if (not isinstance(sha,str) or len(sha)!=64 or sha=='0'*64
+                or any(char not in '0123456789abcdef' for char in sha)):
+            raise BridgeError('Invalid native credential digest metadata')
+        if (value.get('client')!='opencode' or value.get('native_id')!=sid or
+                value.get('kind')!='bootstrap' or value.get('event_id')!='bootstrap:'+sid):
+            return None
+    if manifest.get('sha256')!=request.get('sha256'):return None
+    observed=request.get('observed_at')
+    if (type(observed) not in (int,float) or not math.isfinite(observed)
+            or not 0<=time.time()-observed<86400):return None
+    receipt=evidence.with_suffix('.receipt')
+    if receipt.exists() or receipt.is_symlink():
+        private(receipt)
+        from babel.account_enrollment import digest
+        if receipt.stat().st_size>128 or receipt.read_text()!=digest(request)+'\n':
+            raise BridgeError('Native enrollment acceptance evidence changed')
+        return 'accepted' # Auth failure here is distinct from pending enrollment.
+    return 'pending'
+
+
+def pending_bootstrap(path, sid):
+    return bootstrap_state(path,sid)=='pending'
+
+
+def contact_read(call, state, *, pending_call=None, clock=time.monotonic, sleep=time.sleep):
+    """Bounded HTTP401 readiness for new identities, never enrollment/mutations."""
+    current=state()
+    if current!='pending':return call() # Ordinary20sec helper behavior; no new retry.
+    read=pending_call or call
+    deadline=clock()+12
+    delay=1
+    last_error=None
+    while True:
+        remaining=deadline-clock()
+        if remaining<=0:
+            if current=='pending' and last_error is not None:
+                return {'verified':False,'status':'awaiting_operator_enrollment','retry_after':20}
+            raise last_error or TimeoutError('Native authentication readiness deadline')
+        before=current
+        try:return read(timeout=min(20,remaining))
+        except HTTPError as error:
+            if error.code!=401:raise
+            last_error=error
+            current=state() # Malformed/local/rotation evidence never becomes pending.
+            if current=='accepted':
+                if before=='pending':
+                    continue # One immediate authoritative read after acceptance raced this401.
+                raise # Persistent accepted401 is not pending enrollment.
+            if current!='pending':raise
+            remaining=deadline-clock()
+            if remaining<=0:
+                return {'verified':False,'status':'awaiting_operator_enrollment','retry_after':20}
+            sleep(min(delay,remaining))
+            delay=min(delay+1,4)
+            current=state()
+            if current not in ('pending','accepted'):raise last_error
 
 
 class NativeAdmission(RuntimeError):
@@ -95,7 +170,17 @@ class Bridge:
         if not (path/'token').exists():raise BridgeError('Native mailbox is not prepared')
         from babel.account_enrollment import ensure_enrollment
         ensure_enrollment(self.account_file)
-        result=self.helper.call(path,operation,arguments)
+        call=lambda **options:self.helper.call(path,operation,arguments,**options)
+        if operation=='list_contacts' and not self.helper.legacy:
+            manifest=read_json(path/'trusted-enrollment.json',4096)
+            if not isinstance(manifest,dict) or not isinstance(manifest.get('sha256'),str):
+                raise BridgeError('Invalid native enrollment metadata')
+            # Explicit committed credential avoids recursive resume verification
+            # or rotation inside a bounded new-bootstrap authentication read.
+            pending_call=lambda **options:self.helper.call(path,operation,arguments,
+                credential=path/'token',expected_digest=manifest['sha256'],**options)
+            result=contact_read(call,lambda:bootstrap_state(path,sid),pending_call=pending_call)
+        else:result=call()
         from babel.reporting import with_reporting_policy
         return with_reporting_policy(path,result)
 

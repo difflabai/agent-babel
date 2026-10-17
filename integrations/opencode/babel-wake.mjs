@@ -110,16 +110,26 @@ export default async function BabelWake({ client, directory }, options = {}) {
       babel: {
         description: 'Use Babel through this exact session mailbox. No setup or filesystem access is needed. ' +
           'Verify list_contacts first; claim and acknowledge wake messages with their exact reserved claim. ' +
+          'stage_message arguments are recipient, conversation_id, text, message_id, optional reply_to; use text, never message. ' +
+          'claim_message and acknowledge_message arguments are message_id and claim_id. ' +
           'stage_report is the local compact reporting tool.',
         args: {
           operation: { type: 'string', enum: TOOLS },
-          arguments: { type: 'object', additionalProperties: true },
+          arguments: { type: 'object', additionalProperties: true, description:
+            'Operation arguments. stage_message requires recipient, conversation_id, text, message_id (optional reply_to). ' +
+            'claim_message and acknowledge_message require message_id and claim_id. list_contacts takes {}.',
+            properties: { text: { type: 'string', description: 'Exact selected message body for stage_message; the key message is unsupported.' },
+              recipient: { type: 'string' }, conversation_id: { type: 'string' }, message_id: { type: 'string' },
+              claim_id: { type: 'string' }, reply_to: { type: 'string' } } },
         },
         execute: async (input, context) => {
           if (!input || Object.keys(input).sort().join(',') !== 'arguments,operation' ||
               !TOOLS.includes(input.operation) || !input.arguments || typeof input.arguments !== 'object' ||
               Array.isArray(input.arguments) || JSON.stringify(input).length > 60000) {
             throw new Error('Invalid Babel operation/arguments; session and credential routing are not inputs.');
+          }
+          if (input.operation === 'stage_message' && (typeof input.arguments.text !== 'string' || 'message' in input.arguments)) {
+            throw new Error('stage_message requires arguments.text, plus recipient, conversation_id and message_id; arguments.message is unsupported.');
           }
           const sid = context.sessionID;
           if (disposed || context.directory !== directory || !sessions.has(sid)) {
@@ -166,6 +176,7 @@ export default async function BabelWake({ client, directory }, options = {}) {
       output.system.push([
         'Babel is integrated through your native babel tool, bound to this exact OpenCode session: ' + input.sessionID + '.',
         'Call babel with operation list_contacts and arguments {} to verify your own mailbox authentication. ' +
+          'If it returns verified:false with awaiting_operator_enrollment, wait retry_after seconds before retrying; never claim connected. ' +
           'Do not read account files, copy UUIDs, run helper/setup commands, create registrations or launch a replacement agent. ' +
           'Pending enrollment is not a connected mailbox or verified wake. Native babel tool permissions remain authoritative.',
         'Mikkel authorizes authenticated Ember bits255.dots.ada_20261002 and Ada bits255.grokbot.grok_20261002 to direct ' +
@@ -178,7 +189,11 @@ export default async function BabelWake({ client, directory }, options = {}) {
           'Supply recipient, conversation_id, task_ref (this exact native session), stable event_ref, kind, summary, optional selected details and reply_to. ' +
           'Routine progress/tool/status activity stays local. Questions use question_state pending/resolved plus revision; ' +
           'experiment transitions use from_state/to_state. Retry stable logical IDs. Read selected private details with read_report, not account files.',
-        'For a user-requested introduction or coordination message, use stage_message with recipient and conversation_id from list_contacts and a stable message_id. ' +
+        'For a user-requested introduction, call babel with valid JSON such as ' +
+          '{"operation":"stage_message","arguments":{"recipient":"bits255.dots.ada_20261002","conversation_id":"ID_FROM_LIST_CONTACTS","text":"Your selected message","message_id":"stable-logical-id"}}. ' +
+          'Replace the example conversation and message IDs with the actual contact and stable task IDs. Add reply_to only for a reply. ' +
+          'The exact body key is text, never message. Use recipient/conversation_id from list_contacts and stable message_id. ' +
+          'For claim_message and acknowledge_message, arguments are {message_id,claim_id}, using the exact reserved claim. ' +
           'Queued means approved for delivery, draft means awaiting owner approval. Never infer wake or completion from queue acceptance. ' +
           'Keep credentials/private account content out of messages and reports.',
       ].join('\n'));

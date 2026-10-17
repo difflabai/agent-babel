@@ -168,8 +168,9 @@ class Helper:
             return path,credential,request
         finally:os.close(fd)
 
-    def call(self,path,tool,args,credential=None,expected_digest=None):
+    def call(self,path,tool,args,credential=None,expected_digest=None,timeout=20):
         if tool not in TOOLS:raise BridgeError('Unsupported helper tool')
+        if type(timeout) not in (int,float) or not 0<timeout<=20:raise BridgeError('Invalid helper request timeout')
         if expected_digest is not None and credential is None:
             raise BridgeError('Pinned tool calls require an explicit existing credential')
         if tool in ('stage_report','read_report'):
@@ -188,7 +189,7 @@ class Helper:
         data={'jsonrpc':'2.0','id':1,'method':'tools/call','params':{'name':tool,'arguments':args}}
         req=Request(BASE,data=json.dumps(data).encode(),headers={'Authorization':'Bearer '+token,
             'Content-Type':'application/json','Accept':'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25'})
-        with build_opener(NoRedirect()).open(req,timeout=20) as response:payload=json.load(response)
+        with build_opener(NoRedirect()).open(req,timeout=timeout) as response:payload=json.load(response)
         if 'error' in payload or payload['result'].get('isError'):raise BridgeError('Authenticated Babel helper call failed')
         return json.loads(payload['result']['content'][0]['text'])
 

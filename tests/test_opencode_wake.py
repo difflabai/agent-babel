@@ -105,7 +105,9 @@ class OpenCodeTests(DispatcherTests,unittest.TestCase):
         self.helper.call=Mock(return_value={'contacts':[self.route]})
         result=self.bridge.tool(SID,'list_contacts',{})
         self.assertEqual(result['contacts'],[self.route])
-        self.helper.call.assert_called_once_with(self.box.path,'list_contacts',{})
+        self.assertEqual(self.helper.call.call_args.args,(self.box.path,'list_contacts',{}))
+        self.assertGreater(self.helper.call.call_args.kwargs['timeout'],0)
+        self.assertLessEqual(self.helper.call.call_args.kwargs['timeout'],12)
         self.assertFalse(list(self.box.path.glob('*resume*')))
 
     def test_plugin_installer_dry_run_idempotence_and_edited_source_preservation(self):
