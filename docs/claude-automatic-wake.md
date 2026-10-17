@@ -97,7 +97,11 @@ messages once recipient claim leases allow it. There is no permanent delivered
 mark that could hide a silently dropped channel event. The channel never ACKs a
 message on the worker's behalf. An in-flight notification cannot be recalled
 after a session clear; it retains its exact original UUID in both metadata and
-the helper command.
+the helper command. Both the server instructions and each notification require
+Claude to compare those IDs with the current context's actual SessionStart UUID
+and skip a mismatch without claiming or reading. The notification itself is not
+evidence of the receiver's current identity. This final context check is an
+agent instruction, not native transport attestation.
 
 ## Verification
 

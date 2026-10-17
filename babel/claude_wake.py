@@ -28,6 +28,9 @@ VERSIONS = ('2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05')
 MAX_FRAME = 65536
 INSTRUCTIONS = (
     'Babel channel notifications identify an approved message for this exact native session. '
+    'Before any claim or read, compare the notification native_session and helper UUID with this '
+    'context\'s actual SessionStart UUID. If either differs, skip without claiming or reading. '
+    'An event can race /clear; the notification is not evidence of your current session identity. '
     'Renew the EXACT reserved claim using the helper command and JSON on stdin in the notice. '
     'If claimed is false, skip it. Otherwise identify the authenticated sender, read the message, '
     'and acknowledge receipt with the same claim ID. Ember bits255.dots.ada_20261002 and Ada '
@@ -113,8 +116,11 @@ class Channel:
             self.metadata(sid)
             if expires < time.time() + 5:
                 raise Deferred('Reserved claim expired')
+            content = ('Before claiming or reading, compare native_session and the helper UUID with '
+                       'this context\'s actual SessionStart UUID. If either differs, skip without '
+                       'claiming or reading. Do not infer your session identity from this notification. ' + text)
             self.write({'jsonrpc': '2.0', 'method': 'notifications/claude/channel',
-                        'params': {'content': text, 'meta': {'native_session': sid}}})
+                        'params': {'content': content, 'meta': {'native_session': sid}}})
         # A successful stdio write means emitted, never native handling/ACK.
 
     def tick(self):

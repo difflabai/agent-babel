@@ -87,6 +87,8 @@ class ClaudeWakeTests(DispatcherTests, unittest.TestCase):
         result = self.channel.handle(request)['result']
         self.assertEqual(result['protocolVersion'], '2025-11-25')
         self.assertEqual(result['capabilities'], {'experimental': {'claude/channel': {}}})
+        self.assertIn('actual SessionStart UUID', result['instructions'])
+        self.assertIn('skip without claiming or reading', result['instructions'])
         self.assertIsNone(self.channel.handle({'jsonrpc': '2.0', 'method': 'notifications/initialized'}))
         self.channel.thread.join(1)
         self.channel.handle({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
@@ -137,6 +139,8 @@ class ClaudeWakeTests(DispatcherTests, unittest.TestCase):
         self.assertIn('--client claude', text)
         self.assertIn('--native-session ' + SID, text)
         self.assertIn('Reserved claim ID: wake_', text)
+        self.assertIn('actual SessionStart UUID', text)
+        self.assertIn('skip without claiming or reading', text)
         self.assertNotIn('PRIVATE TASK BODY', text)
         self.assertNotIn('acknowledge_message', self.calls)
         self.assertFalse(list(self.config.rglob('account-wake-state.json')))
