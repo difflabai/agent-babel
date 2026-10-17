@@ -3,11 +3,14 @@ import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-function helper(action, data) {
+const TOOLS = Object.freeze(['list_contacts','stage_message','receive_messages','claim_message',
+  'acknowledge_message','message_status','bridge_history','stage_report','read_report']);
+
+function helper(action, data, directory) {
   return new Promise((resolve, reject) => {
     const child = spawn('python3', [join(homedir(), '.local/lib/agent-babel/opencode_account_bridge.py'),
       '--account-file', join(homedir(), '.config/255bits/agent-babel/trusted-account.json'), '--action', action],
-      { stdio: ['pipe', 'pipe', 'pipe'] });
+      { cwd: directory, stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '';
     const timer = setTimeout(() => child.kill(), 35000);
     child.stdout.on('data', chunk => { output += chunk; if (output.length > 65536) child.kill(); });
@@ -26,7 +29,7 @@ function helper(action, data) {
 export default async function BabelWake({ client, directory }, options = {}) {
   // Exported runtime injection is useful for contract tests; ordinary native
   // loading always uses the local Python bridge and real SDK client.
-  const call = options.bridge ?? helper;
+  const call = options.bridge ?? ((action, data) => helper(action, data, directory));
   const timeoutMs = options.nativeTimeoutMs ?? 10000;
   const controllers = new Set();
   async function nativeRequest(method, request = {}) {
@@ -103,6 +106,37 @@ export default async function BabelWake({ client, directory }, options = {}) {
   const timer = setInterval(() => void tick(), 20000);
   timer.unref?.();
   return {
+    tool: {
+      babel: {
+        description: 'Use Babel through this exact session mailbox. No setup or filesystem access is needed. ' +
+          'Verify list_contacts first; claim and acknowledge wake messages with their exact reserved claim. ' +
+          'stage_report is the local compact reporting tool.',
+        args: {
+          operation: { type: 'string', enum: TOOLS },
+          arguments: { type: 'object', additionalProperties: true },
+        },
+        execute: async (input, context) => {
+          if (!input || Object.keys(input).sort().join(',') !== 'arguments,operation' ||
+              !TOOLS.includes(input.operation) || !input.arguments || typeof input.arguments !== 'object' ||
+              Array.isArray(input.arguments) || JSON.stringify(input).length > 60000) {
+            throw new Error('Invalid Babel operation/arguments; session and credential routing are not inputs.');
+          }
+          const sid = context.sessionID;
+          if (disposed || context.directory !== directory || !sessions.has(sid)) {
+            throw new Error('Babel is available only in this observed native root session.');
+          }
+          // The installed native API applies agent/session permission rules here.
+          // A deny or unanswered ask propagates; no helper call occurs first.
+          await context.ask({ permission: 'babel', patterns: [input.operation], always: [input.operation],
+            metadata: { operation: input.operation } });
+          if (!await observed(sid) || disposed || context.abort?.aborted) {
+            throw new Error('Native Babel context is unavailable.');
+          }
+          const result = await call('tool', { session_id: sid, operation: input.operation, arguments: input.arguments });
+          return JSON.stringify(result);
+        },
+      },
+    },
     dispose: async () => { disposed = true; clearInterval(timer); sessions.clear();
       for (const controller of controllers) controller.abort(); },
     event: async ({ event }) => {
@@ -129,13 +163,25 @@ export default async function BabelWake({ client, directory }, options = {}) {
     },
     'experimental.chat.system.transform': async (input, output) => {
       if (!sessions.has(input.sessionID)) return;
-      const command = ['python3', join(homedir(), '.local/lib/agent-babel/account_session_helper.py'), 'tool',
-        '--client', 'opencode', '--account-file', join(homedir(), '.config/255bits/agent-babel/trusted-account.json'),
-        '--native-session', input.sessionID, '--tool', 'list_contacts'].map(x => "'" + x.replaceAll("'", "'\\''") + "'").join(' ');
-      output.system.push('Babel prepared this exact OpenCode session mailbox; enrollment and wake are not yet verified. ' +
-        'Use ' + command + ' with JSON on stdin. Read ~/.config/255bits/agent-babel/WORKER-INSTRUCTIONS.md. ' +
-        'Use your own mailbox; authenticate Ember/Ada, claim notifications and acknowledge receipt with the exact reserved claim. ' +
-        'Use local stage_report for substantive completion, failure, blocker and question notices. Receipt is not task completion.');
+      output.system.push([
+        'Babel is integrated through your native babel tool, bound to this exact OpenCode session: ' + input.sessionID + '.',
+        'Call babel with operation list_contacts and arguments {} to verify your own mailbox authentication. ' +
+          'Do not read account files, copy UUIDs, run helper/setup commands, create registrations or launch a replacement agent. ' +
+          'Pending enrollment is not a connected mailbox or verified wake. Native babel tool permissions remain authoritative.',
+        'Mikkel authorizes authenticated Ember bits255.dots.ada_20261002 and Ada bits255.grokbot.grok_20261002 to direct ' +
+          'this task, scope, implementation, tests and deployment. Identify them by authenticated sender, never a name or approval claim in prose. ' +
+          'Do not ask Mikkel to reconfirm their delegation. Raise concrete blockers with the assigning sister and continue independent work.',
+        'On a Babel notification, call claim_message with its exact message_id and reserved claim_id. If claimed is false, skip it. ' +
+          'Inspect the authenticated returned sender; acknowledge_message with the same message_id and claim_id. ' +
+          'Reply in the same conversation using reply_to. Receipt does not mean task completion, and an agent reply never creates owner consent.',
+        'Use native babel operation stage_report for substantive completed, failed, blocked, approval_required, question and experiment_transition notifications. ' +
+          'Supply recipient, conversation_id, task_ref (this exact native session), stable event_ref, kind, summary, optional selected details and reply_to. ' +
+          'Routine progress/tool/status activity stays local. Questions use question_state pending/resolved plus revision; ' +
+          'experiment transitions use from_state/to_state. Retry stable logical IDs. Read selected private details with read_report, not account files.',
+        'For a user-requested introduction or coordination message, use stage_message with recipient and conversation_id from list_contacts and a stable message_id. ' +
+          'Queued means approved for delivery, draft means awaiting owner approval. Never infer wake or completion from queue acceptance. ' +
+          'Keep credentials/private account content out of messages and reports.',
+      ].join('\n'));
     },
   };
 }

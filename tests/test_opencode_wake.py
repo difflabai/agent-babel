@@ -67,8 +67,8 @@ class OpenCodeTests(DispatcherTests,unittest.TestCase):
     def test_native_acceptance_is_two_phase_no_duplicate_no_ack_no_peer_text(self):
         result=self.bridge.poll(SID)['notifications'][0]
         self.assertFalse(result['reconcile'])
-        self.assertIn('--client opencode',result['text'])
-        self.assertIn(SID,result['text'])
+        self.assertIn('native babel tool',result['text'])
+        self.assertNotIn('account_session_helper.py',result['text'])
         self.assertNotIn(self.row['text'],result['text'])
         self.assertEqual(read_json(self.box.path/'account-wake-state.json')['submissions'][self.row['id']]['state'],'submitting')
         # A lost native response reconciles exact native message; never resubmit.
@@ -95,6 +95,17 @@ class OpenCodeTests(DispatcherTests,unittest.TestCase):
         records=self.records('opencode',SID)
         self.bridge.poll(SID)
         self.assertEqual(self.records('opencode',SID),records)
+
+    def test_native_tool_uses_only_existing_exact_context_and_standard_helper(self):
+        before=set(self.helper.root.iterdir())
+        with self.assertRaises(OSError):self.bridge.tool(SID2,'list_contacts',{})
+        self.assertEqual(set(self.helper.root.iterdir()),before)
+        with self.assertRaises(BridgeError):self.bridge.tool(SID,'bootstrap',{})
+        self.helper.call=Mock(return_value={'contacts':[self.route]})
+        result=self.bridge.tool(SID,'list_contacts',{})
+        self.assertEqual(result['contacts'],[self.route])
+        self.helper.call.assert_called_once_with(self.box.path,'list_contacts',{})
+        self.assertFalse(list(self.box.path.glob('*resume*')))
 
     def test_plugin_installer_dry_run_idempotence_and_edited_source_preservation(self):
         folder=self.root/'opencode/plugins'

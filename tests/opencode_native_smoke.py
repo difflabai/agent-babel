@@ -78,6 +78,7 @@ export default async (input) => {
                         time.sleep(.2)
                 session=api('/session',{'title':'Babel synthetic native plugin contract'})
                 sid=session['id']
+                assert 'babel' in api('/experimental/tool/ids'), 'Session-bound native Babel tool was not registered'
                 message=api('/session/'+sid+'/message',{'messageID':'msg_nativecontract123456789AB','noReply':True,
                     'parts':[{'type':'text','text':'Verify this isolated native plugin contract.'}]})
                 assert message['info']['sessionID']==sid
@@ -102,7 +103,7 @@ export default async (input) => {
                 after=[json.loads(line) for line in log.read_text().splitlines()]
                 stop=next(i for i,item in enumerate(after) if item['action']=='disposed')
                 assert not any(item['action'] in ('poll','native_read') for item in after[stop+1:]), 'Disposed plugin reopened native instance'
-                print('PASS: native plugin autoload, exact session lifecycle, native notification persistence/confirmation, and native instance disposal stops polling; no provider call or worker ACK.')
+                print('PASS: native plugin autoload, exact session lifecycle, native Babel tool registration, notification persistence/confirmation, and native instance disposal stops polling; no provider call or worker ACK.')
             finally:
                 process.terminate()
                 try:process.wait(timeout=5)
