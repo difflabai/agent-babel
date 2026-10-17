@@ -125,6 +125,8 @@ class Channel:
 
     def tick(self):
         sid = self.binding()
+        from babel.account_enrollment import ensure_enrollment
+        ensure_enrollment(self.account_file)
         box = Mailbox(self.root, self.helper, sid, client='claude')
         with locked(box.path / 'account-wake.lock'):
             # Native channels do not ACK transport delivery. Deduplicate within

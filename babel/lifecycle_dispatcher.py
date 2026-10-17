@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Opt-in account hook dispatcher, disabled until explicitly installed/trusted.
 
-Only local metadata/digests are stored. No HTTP, model, enrollment transport,
-native launch, heartbeat or periodic activity is performed by a hook.
+Only local metadata/digests are stored. An explicitly configured account
+transport may drain that evidence asynchronously; hooks never wait for SSH,
+generate model activity, or renew access from polling.
 """
 import argparse
 import fcntl
@@ -239,6 +240,9 @@ def main(raw=None):
         h=Helper(file.parent/'automatic-instances',config['peer'])
         data=json.loads(raw)
         result=Dispatcher(h).dispatch(a.client,data,env=os.environ)
+        if result.get('status') in ('queued', 'tracked'):
+            from babel.account_enrollment import ensure_enrollment
+            ensure_enrollment(file, fresh=result.get('status') == 'queued')
         if a.client == 'grokbot':
             # Grok ignores SessionStart/UserPromptSubmit additionalContext and
             # consumes Stop decisions as control flow. Never emit a Claude

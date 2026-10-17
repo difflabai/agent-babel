@@ -1,7 +1,8 @@
 """OpenCode's native plugin owns polling; this helper never launches a receiver.
 
 Only runtime-observed root sessions are passed in. Polls neither bootstrap nor
-renew identities. A durable native submission intent is never blindly retried.
+renew identities. An opt-in account transport can drain existing native evidence.
+A durable native submission intent is never blindly retried.
 The plugin confirms the exact native message before committing acceptance.
 """
 import argparse
@@ -75,7 +76,11 @@ class Bridge:
         path = self.helper.root / ('opencode-auto_' + local_key(self.helper.peer,ctx))
         if data.get('hook_event_name') == 'chat.message' and not (path/'token').exists():
             dispatcher.dispatch('opencode', {'hook_event_name':'session.observed','session_id':sid})
-        return dispatcher.dispatch('opencode',data)
+        result=dispatcher.dispatch('opencode',data)
+        if result.get('status') in ('queued','tracked'):
+            from babel.account_enrollment import ensure_enrollment
+            ensure_enrollment(self.account_file, fresh=result.get('status') == 'queued')
+        return result
 
     def tool(self, sid, operation, arguments):
         if not isinstance(operation,str) or operation not in TOOLS or not isinstance(arguments,dict):
@@ -88,11 +93,15 @@ class Bridge:
               self.helper.root/('opencode-auto_'+local_key(self.helper.peer,ctx)))
         private(path,True)
         if not (path/'token').exists():raise BridgeError('Native mailbox is not prepared')
+        from babel.account_enrollment import ensure_enrollment
+        ensure_enrollment(self.account_file)
         result=self.helper.call(path,operation,arguments)
         from babel.reporting import with_reporting_policy
         return with_reporting_policy(path,result)
 
     def poll(self, sid):
+        from babel.account_enrollment import ensure_enrollment
+        ensure_enrollment(self.account_file)
         box = Mailbox(self.root,self.helper,sid,client='opencode')
         with locked(box.path/'account-wake.lock'):
             state_path = box.path/'account-wake-state.json'
