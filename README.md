@@ -200,5 +200,7 @@ For the full OAuth-inclusive suite, use a project virtual environment (`python3 
 
 For an existing approved trusted-account deployment, the optional
 [account-client package](docs/account-client-package.md) includes fast Claude
-prompt intake and a code-only installer. Installing it does not enable hooks,
+prompt intake, automatic Codex wake discovery, and a code-only installer. New
+Codex sessions use the existing account integration without session registration,
+individual service files, or copied thread IDs. Installing it does not enable hooks,
 configure accounts, grant access or deploy the separate server backend.

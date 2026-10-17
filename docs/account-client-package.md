@@ -6,6 +6,14 @@ talks through its existing authenticated helper. The server must already impleme
 the matching trusted-account protocol. Canonical server installations without that
 backend do not gain automatic enrollment by installing this package.
 
+On an account whose Codex lifecycle integration is already installed and trusted,
+new sessions also become eligible for automatic mailbox wake delivery. Opening a
+session is the only session-level action: no registration command, copied UUID,
+service template, or session-specific watcher is required. A shared receiver runs
+automatically alongside the existing native Codex runtime and discovers the
+runtime's loaded threads. The receiver is background execution owned by the
+integration; it is not an additional systemd service.
+
 The trusted UNIX identities remain exactly `mikkel@pop-os` and `work@pop-os`,
 validated against the executing UID. Native context, reviewed legacy bindings,
 credential rotation/recovery, meaningful-work classification and reporting policy
@@ -27,6 +35,8 @@ here reuses the reviewed local fast-hook revision `5570a3e`:
   `babel/reporting.py` supply the necessary client prerequisites. The helper's
   two backend constant imports now come from the client context module, with
   the same peer allowlist and native event regex.
+- `babel/account_wake.py`, `babel/native_receiver.py` and `account_wake.py`
+  provide automatic Codex mailbox discovery and the shared native receiver.
 
 Server enrollment, session leases, collector/operator, legacy admission, channels,
 policy, authentication and transport implementations are excluded from this change.
@@ -66,9 +76,78 @@ An abrupt process/machine termination during the multi-file installation require
 inspection and recovery from that snapshot; atomic file replacement is not a
 transaction across the whole directory.
 
-This command neither reads nor writes account configuration, credentials, hook
+The installer neither reads nor writes account configuration, credentials, hook
 settings, native bindings, services or webhooks. It does not invoke any runtime
-callback. It is separate from hook activation and server deployment.
+callback. Runtime behavior begins when the existing trusted lifecycle hook invokes
+the installed code. Installation is separate from hook activation and server
+deployment.
+
+## Automatic Codex wakes
+
+The existing trusted Codex lifecycle hook ensures one shared account receiver is
+running. A process lock prevents competing receiver launches. There is no separate
+session-registration file or registration API. The receiver discovers loaded thread
+IDs from the existing local Codex app server, then matches each ID to its existing
+deterministic account mailbox or an exact, previously reviewed legacy binding.
+It does not enroll a new mailbox, adopt a similarly named session, create a
+credential, broaden a conversation grant, or produce lifecycle activity from polls.
+
+The receiver uses the account's existing private native control socket. It verifies
+the socket's UNIX peer and uses bounded, standard-library WebSocket metadata calls.
+It does not start or resume Codex threads. A thread must already be loaded and
+eligible in the native runtime before a notification can be queued. The shared
+receiver stops when that runtime disappears; a later real lifecycle hook can start
+it again. One unavailable mailbox is isolated from the other loaded sessions.
+
+Messages remain scoped to each session's existing authenticated mailbox. The
+receiver reserves a recipient claim before using the native queue, and the wake
+notification carries that exact claim ID. The receiving agent must renew it,
+read the authenticated sender, and acknowledge receipt with the same ID before
+handling the message under its existing authority. Native queue acceptance is not
+proof of model wake, receipt, or task completion.
+
+Delivery intents and accepted notifications are recorded durably per mailbox.
+An interrupted claim or uncertain native submission quarantines that mailbox's
+delivery state instead of automatically submitting another notification after a
+restart. Keep retained ledgers for reconciliation. Pending enrollment, credential
+rotation and unsupported native contexts are left alone. Claude lifecycle tracking
+retains its existing behavior; this automatic native wake path is for Codex.
+
+An already trusted account needs only the one package upgrade. Future supported
+Codex sessions use that integration automatically. A fresh account still requires
+the existing approved account configuration, enrollment backend and native hook
+trust review; copying this code does not authorize those operations.
+
+For an account currently using individual session watchers, validate the new
+receiver with a real coordinator message and a claimed/acknowledged reply before
+explicitly retiring those watchers. Do not run two adapters against the same
+mailbox during the canary. Preserve old delivery ledgers, including uncertain
+intents; do not delete them to force a retry or treat a pending native queue as a
+completed handoff. Code installation does not stop old watchers or modify their
+services.
+
+The [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server)
+describes loaded-thread discovery and metadata reads; the
+[CLI reference](https://learn.chatgpt.com/docs/cli/reference) describes queueing
+to an existing thread. Hook output alone cannot wake an idle turn: the
+[hooks documentation](https://learn.chatgpt.com/docs/hooks) says background hook
+output waits for the next user turn when no turn is active. That is why the
+account integration needs the automatic shared receiver.
+
+Local diagnostics are retained in the account configuration directory:
+`account-wake-runtime.json` records the receiver/socket identity, and
+`account-wake-status.json` records each discovered session's latest observed state.
+These records report local receiver state; they do not prove a model processed
+the notification. A quarantined delivery needs reconciliation of its retained
+mailbox ledger before it can be retried.
+
+`tests/test_account_wake.py` checks automatic discovery/startup, exact mailbox and
+legacy binding selection, rotation deferral, competing old watchers, receipt
+races, durable uncertainty and failure isolation. `tests/test_native_receiver.py`
+exercises a real private UNIX WebSocket peer without a model, including handshake,
+metadata RPC, peer/executable checks, runtime replacement and upgrade deadlines.
+Live wake verification still requires a real message claimed and acknowledged by
+the intended native session.
 
 ## Hooks and recovery
 

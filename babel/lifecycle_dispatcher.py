@@ -239,6 +239,15 @@ def main(raw=None):
         h=Helper(file.parent/'automatic-instances',config['peer'])
         data=json.loads(raw)
         result=Dispatcher(h).dispatch(a.client,data,env=os.environ)
+        if a.client == 'codex' and result.get('status') in ('queued', 'tracked'):
+            if data.get('hook_event_name') == 'SessionStart' or result.get('activity_queued'):
+                # The existing trusted lifecycle owns automatic wake startup.
+                # No session registration command, new account or service unit.
+                try:
+                    from babel.account_wake import ensure_receiver
+                    ensure_receiver(file)
+                except (BridgeError, OSError, ValueError, RuntimeError):
+                    print('Babel automatic receiver unavailable; existing task continues.', file=sys.stderr)
         # Advisory hooks do not block, inject prompts, continue or wake sessions.
         if data.get('hook_event_name')=='SessionStart' and result.get('status')=='queued':
             import shlex
