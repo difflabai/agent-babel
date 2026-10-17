@@ -11,6 +11,10 @@ request alone cannot authenticate a new mailbox. The optional
 [account metadata transport](account-enrollment.md) reuses the existing private
 SSH operator connection automatically, with one account-level opt-in and no
 per-session registration or additional OS service.
+The native receiver also performs the single fixed connection introduction
+required by the standing onboarding rule, so the existing coordinator reply
+route is available before model-generated reports. It uses the session's own
+authenticated mailbox and does not renew access or add a grant.
 
 On an account whose Codex lifecycle integration is already installed and trusted,
 new sessions also become eligible for automatic mailbox wake delivery. Opening a

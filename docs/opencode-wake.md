@@ -36,6 +36,13 @@ approved private operator connection. It needs one account-level activation,
 then ordinary new sessions need no registration step. Without an active
 transport, locally prepared mailboxes remain unauthenticated.
 
+Once an idle native mailbox authenticates, the receiver automatically sends one
+fixed connection introduction under the account's standing onboarding rule.
+This enables its existing Ember reply capability before the first model prompt.
+It needs no registration or model-generated greeting and adds no recipient grant
+or lifecycle activity. See the account transport document for its opt-in and
+retained introduction proof.
+
 From this checkout, review dry runs, then install once:
 
 ```sh

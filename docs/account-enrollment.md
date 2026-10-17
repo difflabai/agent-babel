@@ -39,6 +39,21 @@ that owner setting before each request. Local counts and retry timing live in
 the accompanying ledger retains accepted-event proofs and retry state. These
 files contain metadata, and their counts do not prove a model wake or receipt.
 
+After authentication, a supported native receiver also sends one fixed
+`Babel hello.` introduction from the new session's own mailbox to its existing
+Ember conversation. This follows the standing worker onboarding instruction.
+It makes the backend's existing reply capability available without waiting for
+a model to perform setup or send its first report. No new grant is created.
+
+The introduction contains no task, project, path, credential, or transcript.
+Its fixed short body does not count as lifecycle activity in the existing
+backend. A stable message ID and private `connection-introduction.json` ledger
+prevent repeated greetings; prior approved outgoing history also suppresses it.
+Drafts remain awaiting approval. Legacy mailboxes keep their existing onboarding.
+This account opt-in is checked again before a send, and an introduction failure
+does not block an already permitted incoming message. The greeting proves
+neither coordinator receipt nor native inference or completion.
+
 The worker reads only owned, bounded lifecycle metadata beneath this account's
 `automatic-instances` directory. It sends existing native IDs, event IDs,
 credential digests, and observation times to the existing restricted private
