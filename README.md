@@ -204,9 +204,3 @@ prompt intake, automatic Codex wake discovery, and a code-only installer. New
 Codex sessions use the existing account integration without session registration,
 individual service files, or copied thread IDs. Installing it does not enable hooks,
 configure accounts, grant access or deploy the separate server backend.
-
-[Claude's native channel integration](docs/claude-automatic-wake.md) also binds new
-interactive sessions automatically through a one-time account launcher. No
-session registration or additional service is needed. Claude's custom-channel
-research preview still requires native interactive consent and organization
-policy; installation alone does not prove live wake.

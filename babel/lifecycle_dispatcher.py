@@ -239,12 +239,6 @@ def main(raw=None):
         h=Helper(file.parent/'automatic-instances',config['peer'])
         data=json.loads(raw)
         result=Dispatcher(h).dispatch(a.client,data,env=os.environ)
-        if a.client == 'claude' and data.get('hook_event_name') == 'SessionStart' and result.get('status') in ('queued', 'tracked'):
-            try:
-                from babel.claude_wake import bind
-                bind(file, data)
-            except (BridgeError, OSError, ValueError, RuntimeError):
-                print('Babel Claude channel binding unavailable; existing task continues.', file=sys.stderr)
         if a.client == 'codex' and result.get('status') in ('queued', 'tracked'):
             if data.get('hook_event_name') == 'SessionStart' or result.get('activity_queued'):
                 # The existing trusted lifecycle owns automatic wake startup.

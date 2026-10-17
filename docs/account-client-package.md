@@ -37,11 +37,8 @@ here reuses the reviewed local fast-hook revision `5570a3e`:
   the same peer allowlist and native event regex.
 - `babel/account_wake.py`, `babel/native_receiver.py` and `account_wake.py`
   provide automatic Codex mailbox discovery and the shared native receiver.
-- `babel/claude_wake.py` and `claude_wake.py` provide a native-owned Claude channel
-  and account launcher with actual SessionStart binding. See
-  [Claude activation and preview limitations](claude-automatic-wake.md).
 
-Server enrollment, session leases, collector/operator, legacy admission, server channels,
+Server enrollment, session leases, collector/operator, legacy admission, channels,
 policy, authentication and transport implementations are excluded from this change.
 The old global-instruction `install-user.py` is a different installer for the
 `babel-instance` helper and is not used here.
@@ -65,7 +62,7 @@ for an already managed package: edited managed files always require reconciliati
 The manifest includes every fast-path and completion module. Libraries are installed
 before the entrypoint. Existing private `babel/core.py` and `babel/__init__.py` are
 preserved; fresh client-only targets receive the canonical error/validation support
-files. No gateway, auth, policy, lease or server channel file is installed. The installer
+files. No gateway, auth, policy, lease or channel file is installed. The installer
 records exactly which support files it owns so subsequent upgrades remain complete.
 
 Source files keep their existing private modes. Each installation retains the old
