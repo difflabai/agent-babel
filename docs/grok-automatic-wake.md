@@ -56,6 +56,8 @@ endpoint is not automatically adopted. Remote/hosted Grok and Grok Bot routines
 retain their separate activation and authentication rules.
 
 Operator-side eligibility must include `grokbot` in `SessionLeases.AUTOMATIC_CLIENTS`.
+[The deployment delta](../deploy/grok-automatic-backend.patch) composes after the
+separate OpenCode eligibility patch and changes only that one client gate.
 The existing two approved Pop accounts already allow that client; no new account,
 recipient grant, privilege, enrollment transport, or coordinator mapping is
 created here. Apply the one-client deployment delta alongside any separate
@@ -114,6 +116,10 @@ Run Python verification with:
 python3 -m unittest tests.test_grok_wake tests.test_account_wake -q
 python3 -m unittest discover -q
 ```
+
+The native patch also adds the missing `base64::Engine` import in an existing
+upstream image-test fixture, which otherwise prevents the public source test
+crate from compiling. This test-only prerequisite changes no production behavior.
 
 The native patch includes native actor activity/suppression and owning-UI routing,
 approval, idempotency, and closed-session regression tests. Synthetic socket

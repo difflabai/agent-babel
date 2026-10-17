@@ -1,12 +1,14 @@
 """Grok tests use synthetic hooks and bounded local control sockets, no models."""
 import contextlib
 import hashlib
+import io
 import json
 from pathlib import Path
 import socket
 import struct
 import threading
 import time
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -17,6 +19,7 @@ from babel.native_lifecycle import parse as native_parse
 from babel.grok_receiver import GrokNative, ControlSocket, LIMIT
 from babel.native_receiver import NativeUnavailable, NativeRejected
 from babel import account_wake as wake
+from babel.lifecycle_dispatcher import main as lifecycle_main
 from tests.account_client_fixture import DispatcherTests, SID, TURN, TURN2
 from tests import test_native_receiver as native_fixture
 from tests.test_native_receiver import exact
@@ -74,10 +77,26 @@ class GrokLifecycleTests(DispatcherTests, unittest.TestCase):
             with self.assertRaises(BridgeError): parse(data)
 
     def test_compatible_claude_hooks_cannot_adopt_a_grok_session(self):
-        data={'hook_event_name':'SessionStart','session_id':SID,'source':'startup'}
+        data=hook('SessionStart',hook_event_name='SessionStart',session_id=SID,source='startup')
         self.assertIsNone(native_parse('claude',data,env={'GROK_SESSION_ID':SID}))
         self.assertIsNone(native_parse('codex',data,env={'GROK_HOOK_EVENT':'session_start'}))
+        ordinary={'hook_event_name':'SessionStart','session_id':SID,'source':'startup'}
+        self.assertEqual(native_parse('codex',ordinary,env={'GROK_SESSION_ID':SID})['client'],'codex')
         self.assertFalse(list(self.helper.root.iterdir()))
+
+    def test_native_hook_stdout_never_blocks_or_continues_grok(self):
+        self.helper.root.parent.chmod(0o700)
+        account=self.helper.root.parent/'trusted-account.json'
+        wake.write_json(account,{'schema_version':1,'peer':self.helper.peer})
+        argv=['account_lifecycle_hook.py','--client','grokbot','--account-file',str(account)]
+        for data in [hook('SessionStart',source='new'),
+                     hook('UserPromptSubmit',promptId=TURN,prompt='Implement the requested task'),
+                     hook('Stop',promptId=TURN,reason='end_turn',stopHookActive=False)]:
+            output, errors=io.StringIO(),io.StringIO()
+            with patch.object(sys,'argv',argv), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                lifecycle_main(raw=json.dumps(data).encode())
+            self.assertEqual(json.loads(output.getvalue()),{})
+            self.assertEqual(errors.getvalue(),'')
 
 
 class GrokControlWireTests(unittest.TestCase):

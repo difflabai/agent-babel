@@ -643,6 +643,18 @@ index 6aa2503..af19a42 100644
 +        })
 +        .await;
 +}
+diff --git i/crates/codegen/xai-grok-shell/src/session/acp_session_tests/tool_layer_images_bridge_tests.rs w/crates/codegen/xai-grok-shell/src/session/acp_session_tests/tool_layer_images_bridge_tests.rs
+index 8faa60b..a92842e 100644
+--- i/crates/codegen/xai-grok-shell/src/session/acp_session_tests/tool_layer_images_bridge_tests.rs
++++ w/crates/codegen/xai-grok-shell/src/session/acp_session_tests/tool_layer_images_bridge_tests.rs
+@@ -1,6 +1,7 @@
+ //! Wiring tests for MCP tool-layer images through `handle_bridge_tool_success`.
+ use super::support::*;
+ use super::*;
++use base64::Engine;
+ use xai_grok_sampling_types::{ContentPart, ConversationItem};
+ use xai_grok_tools::types::output::{MCPOutput, ToolOutput, ToolRunResult};
+ use xai_grok_tools::util::base64_images::{ExtractedImage, IMAGE_CONTENT_PLACEHOLDER};
 diff --git i/crates/codegen/xai-grok-shell/src/session/commands.rs w/crates/codegen/xai-grok-shell/src/session/commands.rs
 index 29e483b..38b48a4 100644
 --- i/crates/codegen/xai-grok-shell/src/session/commands.rs
