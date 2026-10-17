@@ -6,7 +6,7 @@ Prompt text is inspected transiently to exclude maintenance; never persisted.
 import hashlib
 import json
 import re
-from .account_bootstrap import UUID
+from .account_bootstrap import UUID, OPENCODE_SESSION, OPENCODE_MESSAGE
 from .prompt_intake import meaningful_prompt
 from .core import BridgeError
 
@@ -26,6 +26,22 @@ def parse(client, data, *, env=None):
     if client == 'grokbot':
         from .grok_lifecycle import parse as grok_parse
         return grok_parse(data, env=env)
+    if client == 'opencode':
+        if not isinstance(data,dict): raise BridgeError('Invalid OpenCode event')
+        sid=data.get('session_id')
+        if not isinstance(sid,str) or not OPENCODE_SESSION.fullmatch(sid):
+            raise BridgeError('OpenCode native session ID is unavailable')
+        if data.get('parent_id'): return None
+        name=data.get('hook_event_name')
+        if name in ('session.created','session.observed'):
+            return {'client':client,'native_id':sid,'phase':'start','source':'startup'}
+        if name=='chat.message':
+            turn=data.get('message_id')
+            if not isinstance(turn,str) or not OPENCODE_MESSAGE.fullmatch(turn):
+                raise BridgeError('OpenCode native message ID is unavailable')
+            return {'client':client,'native_id':sid,'phase':'prompt','turn_id':turn,
+                    'meaningful':meaningful_prompt(data.get('prompt'))}
+        return None
     if client not in ('codex', 'claude') or not isinstance(data, dict):
         raise BridgeError('Native lifecycle adapter is unavailable')
     sid = data.get('session_id')

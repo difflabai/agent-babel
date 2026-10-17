@@ -225,7 +225,7 @@ class Dispatcher:
 def main(raw=None):
     os.umask(0o077)
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--client',choices=('codex','claude','grokbot'),required=True)
+    p.add_argument('--client',choices=('codex','claude','opencode','grokbot'),required=True)
     p.add_argument('--account-file',required=True)
     a=p.parse_args()
     try:
@@ -251,6 +251,12 @@ def main(raw=None):
                     print('Babel Grok wake unavailable; patched native notification control is required.', file=sys.stderr)
             print('{}')
             return
+        if a.client == 'claude' and data.get('hook_event_name') == 'SessionStart' and result.get('status') in ('queued', 'tracked'):
+            try:
+                from babel.claude_wake import bind
+                bind(file, data)
+            except (BridgeError, OSError, ValueError, RuntimeError):
+                print('Babel Claude channel binding unavailable; existing task continues.', file=sys.stderr)
         if a.client == 'codex' and result.get('status') in ('queued', 'tracked'):
             if data.get('hook_event_name') == 'SessionStart' or result.get('activity_queued'):
                 # The existing trusted lifecycle owns automatic wake startup.

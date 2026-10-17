@@ -237,8 +237,8 @@ def main():
         hook=data if a.hook_context else None
         if a.native_session:
             if a.hook_context:raise BridgeError('Conflicting native contexts')
-            hook={'hook_event_name':'SessionStart' if a.client in ('claude','codex','grokbot') else 'sessionStart','session_id':a.native_session}
-        if a.client == 'opencode' or (a.client == 'grokbot' and a.legacy_instance and not hook):
+            hook={'hook_event_name':'SessionStart' if a.client in ('claude','codex','grokbot') else 'session.observed' if a.client=='opencode' else 'sessionStart','session_id':a.native_session}
+        if a.client in ('opencode','grokbot') and a.legacy_instance and not hook:
             if not a.legacy_instance or hook or a.native_session:raise BridgeError('This automatic native adapter is unavailable')
             legacy=Path(a.legacy_instance);private(legacy,True);file=legacy/'enrollment.json';private(file)
             old=json.loads(file.read_text())

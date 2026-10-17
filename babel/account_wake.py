@@ -20,7 +20,7 @@ import tempfile
 import time
 
 from account_session_helper import Helper, private
-from babel.account_bootstrap import local_key, UUID
+from babel.account_bootstrap import local_key, UUID, OPENCODE_SESSION
 from babel.core import identifier
 from babel.native_receiver import Native, NativeUnavailable, NativeRejected
 
@@ -95,9 +95,9 @@ def account(path):
 
 class Mailbox:
     def __init__(self, config_root, helper, sid, *, client='codex'):
-        if client not in ('codex', 'grokbot'):
-            raise ValueError('Unsupported mailbox native client')
-        if not UUID.fullmatch(sid):
+        if client not in ('codex', 'claude', 'opencode', 'grokbot'):
+            raise ValueError('Unsupported native mailbox client')
+        if not (OPENCODE_SESSION if client == 'opencode' else UUID).fullmatch(sid):
             raise ValueError('Invalid native context')
         self.root, self.helper, self.sid, self.client = config_root, helper, sid, client
         key = local_key(helper.peer, {'client': client, 'native_id': sid})
@@ -169,9 +169,9 @@ def notice(box, mid, claim):
 
 
 class Delivery:
-    def __init__(self, box, native):
+    def __init__(self, box, native, *, state_path=None):
         self.box, self.native = box, native
-        self.path = box.path / 'account-wake-state.json'
+        self.path = state_path or box.path / 'account-wake-state.json'
         self.state = {'schema_version': 1, 'native_id': box.sid,
                       'participant': box.participant, 'submissions': {}}
         if self.path.exists() or self.path.is_symlink():
