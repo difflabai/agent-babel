@@ -107,3 +107,21 @@ test('mutating native timeout leaves intent pending and never confirms absent ad
   tick();await new Promise(resolve=>setTimeout(resolve,25));tick();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(sent,1);assert.equal(confirmed,0);await hooks.dispose();
 });
+
+test('native disposal clears polling and an in-flight read cannot start mailbox work',async()=>{
+  let tick, pending=false, finishRead, polls=0, reads=0;
+  const original=globalThis.setInterval;
+  globalThis.setInterval=fn=>{tick=fn;return {unref(){}};};
+  const info={id:sid,directory:'/synthetic',time:{}};
+  const client={app:{log:async()=>({})},session:{
+    get:async()=>{reads++;if(pending)return new Promise(resolve=>{finishRead=()=>resolve({data:info});});return {data:info};},
+    status:async()=>({data:{}}),
+  }};
+  const hooks=await BabelWake({client,directory:'/synthetic'},{bridge:async action=>{if(action==='poll')polls++;return {notifications:[]};}});
+  globalThis.setInterval=original;
+  await hooks.event({event:{type:'session.created',properties:{info}}});
+  pending=true;tick();await new Promise(resolve=>setImmediate(resolve));assert.ok(finishRead);
+  await hooks.dispose();finishRead();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(polls,0);const before=reads;
+  tick();await new Promise(resolve=>setImmediate(resolve));assert.equal(reads,before);
+});

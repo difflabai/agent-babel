@@ -5,7 +5,10 @@ OpenCode session observed by that plugin gets its own private mailbox from its
 actual, case-sensitive `ses_*` ID. There are no session registration commands,
 UUID copying, receiver services, provider tokens in plugin configuration, or
 replacement/resume processes. OpenCode owns the plugin and disposes its timer
-when the project runtime unloads.
+when the project runtime unloads. In verified 1.18.33, `Hooks.dispose` is a
+recognized native hook: the plugin implementation registers it with the
+`InstanceState` scope finalizer. It is not an inferred event name or a
+process-exit-only cleanup assumption.
 
 ## Compatibility and installation
 
@@ -99,7 +102,10 @@ BABEL_PRIVATE_BACKEND_ROOT=/path/to/backend python3 -m unittest tests.test_openc
 
 The optional native smoke creates isolated temporary XDG config/data roots,
 loads the actual global plugin through the installed CLI, observes real native
-session/prompt IDs, and checks SDK notification persistence and confirmation.
+session/prompt IDs, and checks SDK notification persistence and confirmation. It then invokes the
+real `/instance/dispose` native API, observes the returned plugin cleanup hook,
+and verifies that polling/native reads stop without reopening the instance.
+The isolated smoke shortens its real polling interval to 100 ms for this check.
 Its synthetic bridge and `noReply` test adapter deliberately avoid real Babel
 accounts, enrollment and provider calls. It proves native transport and hooks,
 **not** inference, authenticated worker receipt, or an end-to-end live wake.
@@ -113,4 +119,5 @@ Primary contracts: [OpenCode plugin documentation](https://opencode.ai/docs/plug
 and the installed-version source for
 [plugin hooks](https://github.com/anomalyco/opencode/blob/v1.18.33/packages/plugin/src/index.ts),
 [automatic local plugin loading](https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/config/plugin.ts),
-and [native prompt admission](https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts).
+and [native prompt admission](https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts),
+and [native plugin finalizers](https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/plugin/index.ts).

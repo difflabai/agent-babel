@@ -33,12 +33,21 @@ export default async (input) => {
   const original=input.client.session.promptAsync.bind(input.client.session);
   input.client.session.promptAsync=(request)=>original({...request,body:{...request.body,noReply:true}});
   let delivered=false;
-  return Babel(input,{bridge:async(action,data)=>{
+  for(const name of ['get','status']){
+    const native=input.client.session[name].bind(input.client.session);
+    input.client.session[name]=async(request)=>{await appendFile(LOG,JSON.stringify({action:'native_read',method:name})+'\\n');return native(request);};
+  }
+  // Speed up only this isolated smoke's polling interval. Native disposal still
+  // owns the real returned hook and clears the real interval.
+  const interval=globalThis.setInterval;let hooks;
+  globalThis.setInterval=(fn,ms)=>interval(fn,Math.min(ms,100));
+  try { hooks=await Babel(input,{bridge:async(action,data)=>{
     await appendFile(LOG,JSON.stringify({action,data})+'\\n');
     if(action==='confirm')delivered=true;
     if(action==='poll')return {notifications:delivered?[]:[{message_id:'synthetic-native-contract',native_message_id:'msg_babelnativecontract123456789',text:'Babel mailbox notification for synthetic native contract.',reconcile:false}]};
     return {};
-  }});
+  }}); } finally {globalThis.setInterval=interval;}
+  return {...hooks,dispose:async()=>{await hooks.dispose();await appendFile(LOG,JSON.stringify({action:'disposed'})+'\\n');}};
 };'''.replace('SOURCE',json.dumps(source)).replace('LOG',json.dumps(str(log)))
         (root/'config/opencode/plugins/babel-wake.js').write_text(wrapper)
         (root/'config/opencode/opencode.json').write_text('{"$schema":"https://opencode.ai/config.json"}')
@@ -82,7 +91,18 @@ export default async (input) => {
                 assert not any(e['action']=='event' and str(e['data'].get('message_id','')).startswith('msg_babel') for e in events)
                 native=api('/session/'+sid+'/message/msg_babelnativecontract123456789')
                 assert native['info']['role']=='user' and native['info']['sessionID']==sid
-                print('PASS: native plugin autoload, exact session lifecycle, native notification persistence and confirmation; no provider call or worker ACK.')
+                assert api('/instance/dispose',{}) is True
+                stop_deadline=time.monotonic()+5
+                while time.monotonic()<stop_deadline:
+                    stopped=[json.loads(line) for line in log.read_text().splitlines()]
+                    if any(item['action']=='disposed' for item in stopped):break
+                    time.sleep(.05)
+                else:raise RuntimeError('Native instance disposal did not invoke plugin cleanup')
+                time.sleep(.5) # Five actual smoke polling intervals after native disposal.
+                after=[json.loads(line) for line in log.read_text().splitlines()]
+                stop=next(i for i,item in enumerate(after) if item['action']=='disposed')
+                assert not any(item['action'] in ('poll','native_read') for item in after[stop+1:]), 'Disposed plugin reopened native instance'
+                print('PASS: native plugin autoload, exact session lifecycle, native notification persistence/confirmation, and native instance disposal stops polling; no provider call or worker ACK.')
             finally:
                 process.terminate()
                 try:process.wait(timeout=5)

@@ -58,8 +58,10 @@ export default async function BabelWake({ client, directory }, options = {}) {
     return info;
   }
   async function deliver(sid, status) {
+    if (disposed) return;
     if (status[sid] && status[sid].type !== 'idle') return;
     if (!await observed(sid)) { sessions.delete(sid); return; }
+    if (disposed) return;
     const result = await call('poll', { session_id: sid });
     for (const request of result.notifications ?? []) {
       if (disposed) return;
@@ -108,7 +110,7 @@ export default async function BabelWake({ client, directory }, options = {}) {
         if (event.type === 'session.deleted') { sessions.delete(event.properties.info.id); return; }
         if (event.type !== 'session.created') return;
         const sid = event.properties.info.id;
-        if (!await observed(sid)) return;
+        if (!await observed(sid) || disposed) return;
         await call('event', { hook_event_name: 'session.created', session_id: sid });
         sessions.add(sid);
       } catch { await warning(); }
@@ -116,7 +118,7 @@ export default async function BabelWake({ client, directory }, options = {}) {
     'chat.message': async (input, output) => {
       try {
         const sid = input.sessionID;
-        if (!await observed(sid)) return;
+        if (!await observed(sid) || disposed) return;
         // Babel-generated prompts are transport maintenance, never activity.
         if (output.message.id.startsWith('msg_babel')) return;
         await call('event', { hook_event_name: 'chat.message', session_id: sid,
