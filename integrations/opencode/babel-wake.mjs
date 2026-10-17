@@ -175,6 +175,8 @@ export default async function BabelWake({ client, directory }, options = {}) {
       if (!sessions.has(input.sessionID)) return;
       output.system.push([
         'Babel is integrated through your native babel tool, bound to this exact OpenCode session: ' + input.sessionID + '.',
+        'On the opted-in account, the idle native receiver handles the one fixed connection introduction. ' +
+          'Do not repeat that onboarding greeting or run registration commands. A connection notice is not proof of wake or task completion.',
         'Call babel with operation list_contacts and arguments {} to verify your own mailbox authentication. ' +
           'If it returns verified:false with awaiting_operator_enrollment, wait retry_after seconds before retrying; never claim connected. ' +
           'Do not read account files, copy UUIDs, run helper/setup commands, create registrations or launch a replacement agent. ' +

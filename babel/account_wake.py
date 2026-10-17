@@ -140,11 +140,12 @@ class Mailbox:
         if hashlib.sha256((self.path / 'token').read_text().strip().encode()).hexdigest() != self.digest:
             raise Deferred('Native credential changed')
 
-    def call(self, name, args):
+    def call(self, name, args, *, timeout=None):
         self.check()
         # Explicit committed credential prevents verification/rotation in a poll.
+        options = {} if timeout is None else {'timeout': timeout}
         result = self.helper.call(self.path, name, args, credential=self.path / 'token',
-                                  expected_digest=self.digest)
+                                  expected_digest=self.digest, **options)
         self.check()
         return result
 
@@ -221,8 +222,11 @@ class Delivery:
         box = self.box
         deadline = time.monotonic() + 30
         metadata = self.native.metadata(box.sid)
-        routes = {(row['recipient'], row['conversation_id']) for row in
-                  box.call('list_contacts', {})['contacts'] if row['recipient'] in COORDINATORS}
+        contacts = box.call('list_contacts', {})['contacts']
+        from babel.account_introduction import ensure_introduction
+        ensure_introduction(box, contacts)
+        routes = {(row['recipient'], row['conversation_id']) for row in contacts
+                  if row['recipient'] in COORDINATORS}
         submitted, cursor = 0, 0
         for _ in range(20):
             if time.monotonic() >= deadline:
