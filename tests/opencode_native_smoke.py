@@ -78,7 +78,7 @@ export default async (input) => {
                         time.sleep(.2)
                 session=api('/session',{'title':'Babel synthetic native plugin contract'})
                 sid=session['id']
-                assert 'babel' in api('/tool/ids'), 'Session-bound native Babel tool was not registered'
+                assert 'babel' in api('/experimental/tool/ids'), 'Session-bound native Babel tool was not registered'
                 message=api('/session/'+sid+'/message',{'messageID':'msg_nativecontract123456789AB','noReply':True,
                     'parts':[{'type':'text','text':'Verify this isolated native plugin contract.'}]})
                 assert message['info']['sessionID']==sid

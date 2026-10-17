@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import BabelWake from '../integrations/opencode/babel-wake.mjs';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const sid = 'ses_1234567890AbCdEfGhIjKlMnOp';
 const mid = 'msg_babel12345678901234567890123456789012';
@@ -143,4 +146,21 @@ test('session-bound native tool obeys permission before helper work and rejects 
   await assert.rejects(f.hooks.tool.babel.execute({operation:'list_contacts',arguments:{}},{...context,sessionID:'ses_other12345678'}),/observed/);
   await assert.rejects(f.hooks.tool.babel.execute({operation:'bootstrap',arguments:{}},context),/routing/);
   assert.equal(f.calls.length,count);await f.hooks.dispose();
+});
+
+
+test('native bridge subprocess uses trusted project directory instead of server launch cwd',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'babel-native-cwd-'));
+  const workspace=join(root,'actual-session-workspace');await mkdir(workspace);
+  await writeFile(join(root,'python3'),`#!${process.execPath}\nprocess.stdin.resume();process.stdin.on('end',()=>process.stdout.write(JSON.stringify({cwd:process.cwd()})));\n`,{mode:0o700});
+  const originalPath=process.env.PATH;const originalInterval=globalThis.setInterval;
+  process.env.PATH=root+':'+originalPath;
+  globalThis.setInterval=()=>({unref(){}});
+  try{
+    const client={app:{log:async()=>({})},session:{get:async()=>({data:{id:sid,directory:workspace,time:{}}})}};
+    const hooks=await BabelWake({client,directory:workspace});
+    await hooks.event({event:{type:'session.created',properties:{info:{id:sid}}}});
+    const output=JSON.parse(await hooks.tool.babel.execute({operation:'stage_report',arguments:{}},{sessionID:sid,directory:workspace,ask:async()=>{}}));
+    assert.equal(output.cwd,workspace);assert.notEqual(output.cwd,process.cwd());await hooks.dispose();
+  }finally{process.env.PATH=originalPath;globalThis.setInterval=originalInterval;await rm(root,{recursive:true,force:true});}
 });

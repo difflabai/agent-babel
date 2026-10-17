@@ -147,3 +147,8 @@ passes `ask` into the owning native permission service. Default agents allow
 ordinary tools through their existing wildcard rule while asking for external
 directory access; this integration neither edits those rules nor reads the
 private account directory into model context.
+
+The bridge subprocess always uses the trusted native plugin project directory as
+its working directory, including report writes and selected-detail reads. A
+shared server launched from another directory does not relocate a session
+workspace's `.babel-reports` store; model arguments cannot override that path.

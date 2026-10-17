@@ -6,11 +6,11 @@ import { join } from 'node:path';
 const TOOLS = Object.freeze(['list_contacts','stage_message','receive_messages','claim_message',
   'acknowledge_message','message_status','bridge_history','stage_report','read_report']);
 
-function helper(action, data) {
+function helper(action, data, directory) {
   return new Promise((resolve, reject) => {
     const child = spawn('python3', [join(homedir(), '.local/lib/agent-babel/opencode_account_bridge.py'),
       '--account-file', join(homedir(), '.config/255bits/agent-babel/trusted-account.json'), '--action', action],
-      { stdio: ['pipe', 'pipe', 'pipe'] });
+      { cwd: directory, stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '';
     const timer = setTimeout(() => child.kill(), 35000);
     child.stdout.on('data', chunk => { output += chunk; if (output.length > 65536) child.kill(); });
@@ -29,7 +29,7 @@ function helper(action, data) {
 export default async function BabelWake({ client, directory }, options = {}) {
   // Exported runtime injection is useful for contract tests; ordinary native
   // loading always uses the local Python bridge and real SDK client.
-  const call = options.bridge ?? helper;
+  const call = options.bridge ?? ((action, data) => helper(action, data, directory));
   const timeoutMs = options.nativeTimeoutMs ?? 10000;
   const controllers = new Set();
   async function nativeRequest(method, request = {}) {
