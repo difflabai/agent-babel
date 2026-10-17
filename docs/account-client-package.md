@@ -134,6 +134,21 @@ to an existing thread. Hook output alone cannot wake an idle turn: the
 output waits for the next user turn when no turn is active. That is why the
 account integration needs the automatic shared receiver.
 
+Local diagnostics are retained in the account configuration directory:
+`account-wake-runtime.json` records the receiver/socket identity, and
+`account-wake-status.json` records each discovered session's latest observed state.
+These records report local receiver state; they do not prove a model processed
+the notification. A quarantined delivery needs reconciliation of its retained
+mailbox ledger before it can be retried.
+
+`tests/test_account_wake.py` checks automatic discovery/startup, exact mailbox and
+legacy binding selection, rotation deferral, competing old watchers, receipt
+races, durable uncertainty and failure isolation. `tests/test_native_receiver.py`
+exercises a real private UNIX WebSocket peer without a model, including handshake,
+metadata RPC, peer/executable checks, runtime replacement and upgrade deadlines.
+Live wake verification still requires a real message claimed and acknowledged by
+the intended native session.
+
 ## Hooks and recovery
 
 The [Claude](../deploy/account-claude-hooks.example.json) and
