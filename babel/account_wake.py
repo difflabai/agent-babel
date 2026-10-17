@@ -156,6 +156,13 @@ def fingerprint(row):
 
 def notice(box, mid, claim):
     import shlex
+    if box.client == 'opencode':
+        return ('Babel mailbox notification for ' + box.participant + '. Message ID: ' + mid +
+                '. Reserved claim ID: ' + claim + '. Renew this EXACT claim using your native babel tool, '
+                'operation claim_message with arguments containing message_id and claim_id. If claimed is false, skip it. '
+                'Read authenticated sender, acknowledge receipt through operation acknowledge_message with the same claim ID, '
+                'then handle under the existing Ember/Ada coordinator rule and permissions. Reply in the same '
+                'conversation with reply_to. Receipt is not task completion. No filesystem helper/setup is needed.')
     helper = str(Path(__file__).resolve().parent.parent / 'account_session_helper.py')
     command = shlex.join([sys.executable, helper, 'tool', '--client', box.client, '--account-file',
                           str(box.root / 'trusted-account.json'), '--native-session', box.sid,

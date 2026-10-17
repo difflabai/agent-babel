@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import sys
 
-from account_session_helper import Helper
+from account_session_helper import Helper, TOOLS, bind_reviewed, private
 from babel.account_bootstrap import context, local_key
 from babel.account_wake import (Delivery, Mailbox, Quarantined, fingerprint,
                                 locked, notice, read_json, write_json)
@@ -77,6 +77,21 @@ class Bridge:
             dispatcher.dispatch('opencode', {'hook_event_name':'session.observed','session_id':sid})
         return dispatcher.dispatch('opencode',data)
 
+    def tool(self, sid, operation, arguments):
+        if not isinstance(operation,str) or operation not in TOOLS or not isinstance(arguments,dict):
+            raise BridgeError('Unsupported native Babel tool')
+        ctx=context('opencode',hook={'hook_event_name':'session.observed','session_id':sid})
+        # Read only an existing exact native mailbox. A native tool never
+        # bootstraps another context or adopts an identity by name.
+        bind_reviewed(self.helper,self.root,ctx)
+        path=(self.helper.legacy[1] if self.helper.legacy else
+              self.helper.root/('opencode-auto_'+local_key(self.helper.peer,ctx)))
+        private(path,True)
+        if not (path/'token').exists():raise BridgeError('Native mailbox is not prepared')
+        result=self.helper.call(path,operation,arguments)
+        from babel.reporting import with_reporting_policy
+        return with_reporting_policy(path,result)
+
     def poll(self, sid):
         box = Mailbox(self.root,self.helper,sid,client='opencode')
         with locked(box.path/'account-wake.lock'):
@@ -128,7 +143,7 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--account-file',required=True)
-    parser.add_argument('--action',choices=('event','poll','confirm'),required=True)
+    parser.add_argument('--action',choices=('event','poll','confirm','tool'),required=True)
     args = parser.parse_args()
     try:
         raw = sys.stdin.buffer.read(65537)
@@ -137,6 +152,7 @@ def main():
         bridge=Bridge(args.account_file)
         if args.action=='event': result=bridge.event(data)
         elif args.action=='poll': result=bridge.poll(data['session_id'])
+        elif args.action=='tool': result=bridge.tool(data['session_id'],data['operation'],data['arguments'])
         else: result=bridge.confirm(data['session_id'],data)
         print(json.dumps(result))
     except (BridgeError,Quarantined,OSError,ValueError,KeyError,RuntimeError):

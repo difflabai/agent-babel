@@ -62,7 +62,7 @@ test('native prompts carry IDs without text persistence; Babel wakes are never a
   assert.deepEqual(f.calls[0],['event',{session_id:sid,hook_event_name:'chat.message',message_id:'msg_real12345678',prompt:'Implement feature'}]);
   await f.hooks['chat.message']({sessionID:sid},{message:{id:mid},parts:[{type:'text',text:'Babel wake'}]});
   assert.equal(f.calls.length,1);
-  const output={system:[]};await f.hooks['experimental.chat.system.transform']({sessionID:sid},output);assert.match(output.system[0],/--client' 'opencode/);assert.match(output.system[0],new RegExp(sid));
+  const output={system:[]};await f.hooks['experimental.chat.system.transform']({sessionID:sid},output);assert.match(output.system[0],/native babel tool/);assert.doesNotMatch(output.system[0],/account_session_helper.py|WORKER-INSTRUCTIONS.md/);assert.match(output.system[0],new RegExp(sid));
   await f.hooks.dispose();await f.runTick();assert.equal(f.nativeCalls.length,0);
 });
 
@@ -124,4 +124,23 @@ test('native disposal clears polling and an in-flight read cannot start mailbox 
   await hooks.dispose();finishRead();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(polls,0);const before=reads;
   tick();await new Promise(resolve=>setImmediate(resolve));assert.equal(reads,before);
+});
+
+
+test('session-bound native tool obeys permission before helper work and rejects caller routing',async()=>{
+  const f=await fixture();await f.event();
+  const calls=f.calls.length;let asked=[];
+  const context={sessionID:sid,directory:'/synthetic',abort:new AbortController().signal,
+    ask:async request=>{asked.push(request);}};
+  await f.hooks.tool.babel.execute({operation:'list_contacts',arguments:{}},context);
+  assert.equal(asked[0].permission,'babel');assert.deepEqual(asked[0].patterns,['list_contacts']);
+  assert.deepEqual(f.calls.at(-1),['tool',{session_id:sid,operation:'list_contacts',arguments:{}}]);
+  const count=f.calls.length;
+  context.ask=async()=>{throw new Error('Native permission denied');};
+  await assert.rejects(f.hooks.tool.babel.execute({operation:'stage_message',arguments:{text:'test'}},context),/permission denied/);
+  assert.equal(f.calls.length,count);
+  await assert.rejects(f.hooks.tool.babel.execute({operation:'list_contacts',arguments:{},session_id:'another'},context),/routing/);
+  await assert.rejects(f.hooks.tool.babel.execute({operation:'list_contacts',arguments:{}},{...context,sessionID:'ses_other12345678'}),/observed/);
+  await assert.rejects(f.hooks.tool.babel.execute({operation:'bootstrap',arguments:{}},context),/routing/);
+  assert.equal(f.calls.length,count);await f.hooks.dispose();
 });
