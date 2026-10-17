@@ -94,28 +94,30 @@ def account(path):
 
 
 class Mailbox:
-    def __init__(self, config_root, helper, sid):
+    def __init__(self, config_root, helper, sid, *, client="codex"):
         if not UUID.fullmatch(sid):
             raise ValueError('Invalid native context')
-        self.root, self.helper, self.sid = config_root, helper, sid
-        key = local_key(helper.peer, {'client': 'codex', 'native_id': sid})
-        self.path = helper.root / ('codex-auto_' + key)
-        self.participant = 'bits255.codex.auto_' + key
+        if client not in ('codex', 'claude'):
+            raise ValueError('Unsupported native mailbox client')
+        self.root, self.helper, self.sid, self.client = config_root, helper, sid, client
+        key = local_key(helper.peer, {'client': client, 'native_id': sid})
+        self.path = helper.root / (client + '-auto_' + key)
+        self.participant = 'bits255.' + client + '.auto_' + key
         mapping = config_root / 'native-bindings.json'
         legacy = None
         if mapping.exists() or mapping.is_symlink():
             data = read_json(mapping, 16384)
             if set(data) != {'schema_version', 'bindings'} or data['schema_version'] != 1:
                 raise ValueError('Invalid reviewed native map')
-            legacy = data['bindings'].get('codex:' + sid)
+            legacy = data['bindings'].get(client + ':' + sid)
         if legacy is not None:
             if not isinstance(legacy, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,23}', legacy):
                 raise ValueError('Invalid reviewed native mapping')
-            self.path = config_root / 'instances' / ('codex-' + legacy)
+            self.path = config_root / 'instances' / (client + '-' + legacy)
             private(self.path, True)
             manifest = read_json(self.path / 'enrollment.json', 4096)
             self.participant = identifier(manifest['participant'])
-            expected = {'peer': helper.peer, 'client': 'codex', 'native_id': sid,
+            expected = {'peer': helper.peer, 'client': client, 'native_id': sid,
                         'participant': self.participant}
             if read_json(self.path / 'account-native-binding.json', 4096) != expected:
                 raise ValueError('Reviewed native binding mismatch')
@@ -126,7 +128,7 @@ class Mailbox:
             manifest = read_json(self.path / 'trusted-enrollment.json', 4096)
             if manifest.get('native_id') != sid:
                 raise ValueError('Native mailbox mismatch')
-        if manifest.get('client') != 'codex':
+        if manifest.get('client') != client:
             raise ValueError('Mailbox client mismatch')
         self.digest = manifest['sha256']
         self.check()
@@ -155,7 +157,7 @@ def fingerprint(row):
 def notice(box, mid, claim):
     import shlex
     helper = str(Path(__file__).resolve().parent.parent / 'account_session_helper.py')
-    command = shlex.join([sys.executable, helper, 'tool', '--client', 'codex', '--account-file',
+    command = shlex.join([sys.executable, helper, 'tool', '--client', box.client, '--account-file',
                           str(box.root / 'trusted-account.json'), '--native-session', box.sid,
                           '--tool', 'claim_message'])
     return ('Babel mailbox notification for ' + box.participant + '. Message ID: ' + mid +
@@ -167,9 +169,9 @@ def notice(box, mid, claim):
 
 
 class Delivery:
-    def __init__(self, box, native):
+    def __init__(self, box, native, *, state_path=None):
         self.box, self.native = box, native
-        self.path = box.path / 'account-wake-state.json'
+        self.path = state_path or box.path / 'account-wake-state.json'
         self.state = {'schema_version': 1, 'native_id': box.sid,
                       'participant': box.participant, 'submissions': {}}
         if self.path.exists() or self.path.is_symlink():
