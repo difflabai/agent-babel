@@ -18,6 +18,7 @@ CLIENT_FILES = (
     'babel/native_lifecycle.py', 'account_session_helper.py',
     'babel/native_receiver.py', 'babel/account_wake.py', 'account_wake.py',
     'babel/lifecycle_dispatcher.py', 'account_lifecycle_hook.py',
+    'babel/claude_wake.py', 'claude_wake.py',
 )
 # Existing bundles retain these files verbatim. Fresh client-only installations
 # need their error/validation definitions; none of the Store code is invoked.
