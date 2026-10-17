@@ -20,7 +20,7 @@ import tempfile
 import time
 
 from account_session_helper import Helper, private
-from babel.account_bootstrap import local_key, UUID
+from babel.account_bootstrap import local_key, UUID, OPENCODE_SESSION
 from babel.core import identifier
 from babel.native_receiver import Native, NativeUnavailable
 
@@ -94,11 +94,11 @@ def account(path):
 
 
 class Mailbox:
-    def __init__(self, config_root, helper, sid, *, client="codex"):
-        if not UUID.fullmatch(sid):
-            raise ValueError('Invalid native context')
-        if client not in ('codex', 'claude'):
+    def __init__(self, config_root, helper, sid, *, client='codex'):
+        if client not in ('codex', 'claude', 'opencode'):
             raise ValueError('Unsupported native mailbox client')
+        if not (OPENCODE_SESSION if client == 'opencode' else UUID).fullmatch(sid):
+            raise ValueError('Invalid native context')
         self.root, self.helper, self.sid, self.client = config_root, helper, sid, client
         key = local_key(helper.peer, {'client': client, 'native_id': sid})
         self.path = helper.root / (client + '-auto_' + key)

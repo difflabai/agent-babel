@@ -210,3 +210,8 @@ interactive sessions automatically through a one-time account launcher. No
 session registration or additional service is needed. Claude's custom-channel
 research preview still requires native interactive consent and organization
 policy; installation alone does not prove live wake.
+
+OpenCode can use an account-wide [native wake plugin](docs/opencode-wake.md):
+new sessions automatically receive their own native mailbox context and wake
+inside the original runtime, with no per-session service or registration. It
+requires the documented trusted-backend OpenCode compatibility gate.
