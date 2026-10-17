@@ -48,7 +48,7 @@ retains ordinary account/project MCP configuration (no strict-config flag).
 It passes an extra local MCP configuration and
 `--dangerously-load-development-channels server:babel_account_wake`; this is the
 documented per-entry preview allowlist opt-in, not permission bypass. Admin/help/
-version/update commands, print mode and non-terminal invocations use the original
+version/update/setup commands, print/background/bare mode and non-terminal invocations use the original
 native CLI without channel options. The custom development channel is unsupported
 in print/SDK mode. No permission relay capability is advertised.
 

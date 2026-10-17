@@ -237,7 +237,9 @@ def launch(claude, account_file, args):
     commands = {'auth', 'agents', 'attach', 'doctor', 'install', 'logs', 'mcp', 'plugin',
                 'plugins', 'purge', 'respawn', 'rm', 'setup-token', 'stop', 'kill',
                 'ultrareview', 'update', 'upgrade'}
-    if (not sys.stdin.isatty() or command in commands or any(arg in ('-p', '--print', '--help', '-h', '--version', '-v')
+    if (not sys.stdin.isatty() or command in commands or any(arg in (
+            '-p', '--print', '--help', '-h', '--version', '-v', '--bg', '--background',
+            '--bare', '--init', '--init-only', '--maintenance')
                                    or arg.startswith('--print=') for arg in args)):
         return subprocess.call([str(claude), *args])
     with tempfile.TemporaryDirectory(prefix='babel-claude-') as folder:

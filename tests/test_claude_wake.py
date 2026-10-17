@@ -226,7 +226,8 @@ class ClaudeWakeTests(DispatcherTests, unittest.TestCase):
         self.assertEqual(result[-1], 'server:' + claude.SERVER)
 
     def test_print_and_administrative_modes_do_not_claim_channel_support(self):
-        for args in (['-p', 'hi'], ['--print=json', 'hi'], ['--version'], ['mcp', 'list']):
+        for args in (['-p', 'hi'], ['--print=json', 'hi'], ['--version'], ['mcp', 'list'],
+                     ['--bg', 'task'], ['--bare'], ['--init-only']):
             with patch.object(claude.subprocess, 'call', return_value=0) as call:
                 self.assertEqual(claude.launch('/synthetic/claude', self.account, args), 0)
             self.assertEqual(call.call_args.args[0], ['/synthetic/claude', *args])
