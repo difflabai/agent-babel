@@ -30,6 +30,12 @@ client has extended that line meanwhile, append only `opencode` to the current
 tuple; do not replace its other entries. This client patch does not change a
 running backend or create a grant by itself.
 
+The [optional account metadata transport](account-enrollment.md) automatically
+delivers existing native enrollment evidence through the account's already
+approved private operator connection. It needs one account-level activation,
+then ordinary new sessions need no registration step. Without an active
+transport, locally prepared mailboxes remain unauthenticated.
+
 From this checkout, review dry runs, then install once:
 
 ```sh

@@ -6,6 +6,12 @@ talks through its existing authenticated helper. The server must already impleme
 the matching trusted-account protocol. Canonical server installations without that
 backend do not gain automatic enrollment by installing this package.
 
+Approved accounts also need an active enrollment transport: a prepared local
+request alone cannot authenticate a new mailbox. The optional
+[account metadata transport](account-enrollment.md) reuses the existing private
+SSH operator connection automatically, with one account-level opt-in and no
+per-session registration or additional OS service.
+
 On an account whose Codex lifecycle integration is already installed and trusted,
 new sessions also become eligible for automatic mailbox wake delivery. Opening a
 session is the only session-level action: no registration command, copied UUID,
@@ -41,8 +47,10 @@ here reuses the reviewed local fast-hook revision `5570a3e`:
   and account launcher with actual SessionStart binding. See
   [Claude activation and preview limitations](claude-automatic-wake.md).
 
-Server enrollment, session leases, collector/operator, legacy admission, server channels,
-policy, authentication and transport implementations are excluded from this change.
+Server enrollment, session leases, the private operator, legacy admission,
+server channels, policy and authentication implementations are excluded from
+this package. The optional local metadata drainer calls the existing private
+operator; it does not implement or replace its authorization rules.
 The old global-instruction `install-user.py` is a different installer for the
 `babel-instance` helper and is not used here.
 

@@ -25,6 +25,7 @@ class OpenCodeTests(DispatcherTests,unittest.TestCase):
         super().setUp()
         self.bridge=Bridge.__new__(Bridge)
         self.bridge.root=self.helper.root.parent
+        self.bridge.account_file=self.bridge.root/'trusted-account.json'
         self.bridge.helper=self.helper
         self.bridge.event({'session_id':SID,'hook_event_name':'session.created'})
         self.box=Mailbox(self.bridge.root,self.helper,SID,client='opencode')

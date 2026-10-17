@@ -315,6 +315,10 @@ class Receiver:
             return Delivery(box, native).step()
 
     def tick(self):
+        # Retry existing native evidence even while a new mailbox awaits auth.
+        # The opt-in transport never creates lifecycle activity from this poll.
+        from babel.account_enrollment import ensure_enrollment
+        ensure_enrollment(self.root / 'trusted-account.json')
         loaded = self.native.loaded()  # Only loaded exact native IDs; no disk scan/adoption.
         now = time.monotonic()
         changed = False
