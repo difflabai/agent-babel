@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client grokbot --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client grokbot --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.local/lib/agent-babel/account_lifecycle_hook.py\" --client grokbot --account-file \"$HOME/.config/255bits/agent-babel/trusted-account.json\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

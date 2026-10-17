@@ -26,6 +26,10 @@ class NativeUnavailable(RuntimeError):
     pass
 
 
+class NativeRejected(NativeUnavailable):
+    """Explicit native rejection before any notification was admitted."""
+
+
 def require(condition):
     if not condition:
         raise NativeUnavailable('Native receiver unavailable')

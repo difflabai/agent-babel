@@ -157,7 +157,7 @@ class Dispatcher:
                     else:
                         db.execute('INSERT OR IGNORE INTO turns VALUES(?,?,0)',(turn,int(item['meaningful'])))
                     reporting_hint = self.reporting_hint(db, item)
-                    if client == 'claude' or not item['meaningful']:
+                    if client in ('claude', 'grokbot') or not item['meaningful']:
                         db.commit(); return {'status':'tracked','activity_queued':False,'reporting_hint':reporting_hint}
                     kind, eid = 'turn',event_key(client,item['native_id'],turn,'prompt')
                 elif item['phase'] == 'work':
@@ -225,7 +225,7 @@ class Dispatcher:
 def main(raw=None):
     os.umask(0o077)
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--client',choices=('codex','claude'),required=True)
+    p.add_argument('--client',choices=('codex','claude','opencode','grokbot'),required=True)
     p.add_argument('--account-file',required=True)
     a=p.parse_args()
     try:
@@ -239,6 +239,18 @@ def main(raw=None):
         h=Helper(file.parent/'automatic-instances',config['peer'])
         data=json.loads(raw)
         result=Dispatcher(h).dispatch(a.client,data,env=os.environ)
+        if a.client == 'grokbot':
+            # Grok ignores SessionStart/UserPromptSubmit additionalContext and
+            # consumes Stop decisions as control flow. Never emit a Claude
+            # continuation response or claim wake is connected.
+            if result.get('status') in ('queued', 'tracked'):
+                try:
+                    from babel.grok_account_wake import ensure_receiver
+                    ensure_receiver(file)
+                except (BridgeError, OSError, ValueError, RuntimeError):
+                    print('Babel Grok wake unavailable; patched native notification control is required.', file=sys.stderr)
+            print('{}')
+            return
         if a.client == 'claude' and data.get('hook_event_name') == 'SessionStart' and result.get('status') in ('queued', 'tracked'):
             try:
                 from babel.claude_wake import bind

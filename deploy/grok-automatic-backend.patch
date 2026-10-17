@@ -1,0 +1,5 @@
+--- a/babel/session_leases.py
++++ b/babel/session_leases.py
+@@ -19 +19 @@
+-AUTOMATIC_CLIENTS = frozenset(('codex','claude','cursor','opencode'))
++AUTOMATIC_CLIENTS = frozenset(('codex','claude','cursor','opencode','grokbot'))

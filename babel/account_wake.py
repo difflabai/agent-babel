@@ -22,7 +22,7 @@ import time
 from account_session_helper import Helper, private
 from babel.account_bootstrap import local_key, UUID, OPENCODE_SESSION
 from babel.core import identifier
-from babel.native_receiver import Native, NativeUnavailable
+from babel.native_receiver import Native, NativeUnavailable, NativeRejected
 
 COORDINATORS = {'bits255.dots.ada_20261002', 'bits255.grokbot.grok_20261002'}
 ROTATION = ('resume-token', 'resume-event.json', 'rotation-journal.json', 'token.pending')
@@ -95,7 +95,7 @@ def account(path):
 
 class Mailbox:
     def __init__(self, config_root, helper, sid, *, client='codex'):
-        if client not in ('codex', 'claude', 'opencode'):
+        if client not in ('codex', 'claude', 'opencode', 'grokbot'):
             raise ValueError('Unsupported native mailbox client')
         if not (OPENCODE_SESSION if client == 'opencode' else UUID).fullmatch(sid):
             raise ValueError('Invalid native context')
@@ -267,7 +267,15 @@ class Delivery:
                 box.check()
                 item['state'] = 'submitting'
                 self.persist()
-                self.native.queue(box.sid, metadata['cwd'], notice(box, mid, claim), reserved['expires'])
+                try:
+                    self.native.queue(box.sid, metadata['cwd'], notice(box, mid, claim), reserved['expires'])
+                except NativeRejected:
+                    # A native actor may become busy after discovery. This
+                    # explicit pre-admission rejection permits a later retry;
+                    # the stable claim remains reserved, never acknowledged.
+                    del self.state['submissions'][mid]
+                    self.persist()
+                    return submitted
                 item['state'] = 'accepted'
                 self.persist()
                 submitted += 1
@@ -279,22 +287,24 @@ class Delivery:
 
 
 class Receiver:
-    def __init__(self, account_file, socket_path, *, workers=4):
+    def __init__(self, account_file, socket_path, *, workers=4, client='codex', native_factory=Native):
         self.root, self.helper = account(account_file)
-        self.native = Native(socket_path)
+        self.client, self.native_factory = client, native_factory
+        self.native = native_factory(socket_path)
+        self.status_file = self.root / ('account-wake-status.json' if client == 'codex' else client + '-account-wake-status.json')
         self.pool = ThreadPoolExecutor(max_workers=workers)
         self.workers = workers
         self.futures, self.due, self.statuses = {}, {}, {}
 
     def deliver(self, sid):
-        box = Mailbox(self.root, self.helper, sid)
+        box = Mailbox(self.root, self.helper, sid, client=self.client)
         with ExitStack() as stack:
             stack.enter_context(locked(box.path / 'account-wake.lock'))
             # Cooperate with installed old watchers; don't race their claims.
             for name in ('wake.lock', 'relay-session-wake.lock'):
                 if (box.path / name).exists() or (box.path / name).is_symlink():
                     stack.enter_context(locked(box.path / name, create=False))
-            native = Native(self.native.path, self.native.identity)
+            native = self.native_factory(self.native.path, self.native.identity)
             return Delivery(box, native).step()
 
     def tick(self):
@@ -330,7 +340,7 @@ class Receiver:
         for sid in sorted(eligible, key=lambda sid: (self.due.get(sid, 0), sid))[:max(0, available)]:
             self.futures[sid] = self.pool.submit(self.deliver, sid)
         if changed:
-            write_json(self.root / 'account-wake-status.json',
+            write_json(getattr(self, 'status_file', self.root / 'account-wake-status.json'),
                        {'sessions': self.statuses, 'observed_at': time.time()})
 
     def close(self):

@@ -15,8 +15,9 @@ RECEIPT = '.account-client-install.json'
 # Libraries first, public entrypoint last. No server/auth/policy implementation.
 CLIENT_FILES = (
     'babel/account_bootstrap.py', 'babel/reporting.py', 'babel/prompt_intake.py',
-    'babel/native_lifecycle.py', 'account_session_helper.py',
+    'babel/native_lifecycle.py', 'babel/grok_lifecycle.py', 'account_session_helper.py',
     'babel/native_receiver.py', 'babel/account_wake.py', 'account_wake.py',
+    'babel/grok_receiver.py', 'babel/grok_account_wake.py', 'grok_account_wake.py',
     'babel/lifecycle_dispatcher.py', 'account_lifecycle_hook.py',
     'babel/claude_wake.py', 'claude_wake.py',
     'babel/opencode_bridge.py', 'opencode_account_bridge.py',
