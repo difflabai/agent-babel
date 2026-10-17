@@ -22,7 +22,7 @@ import time
 from account_session_helper import Helper, private
 from babel.account_bootstrap import local_key, UUID
 from babel.core import identifier
-from babel.native_receiver import Native, NativeUnavailable
+from babel.native_receiver import Native, NativeUnavailable, NativeRejected
 
 COORDINATORS = {'bits255.dots.ada_20261002', 'bits255.grokbot.grok_20261002'}
 ROTATION = ('resume-token', 'resume-event.json', 'rotation-journal.json', 'token.pending')
@@ -94,28 +94,30 @@ def account(path):
 
 
 class Mailbox:
-    def __init__(self, config_root, helper, sid):
+    def __init__(self, config_root, helper, sid, *, client='codex'):
+        if client not in ('codex', 'grokbot'):
+            raise ValueError('Unsupported mailbox native client')
         if not UUID.fullmatch(sid):
             raise ValueError('Invalid native context')
-        self.root, self.helper, self.sid = config_root, helper, sid
-        key = local_key(helper.peer, {'client': 'codex', 'native_id': sid})
-        self.path = helper.root / ('codex-auto_' + key)
-        self.participant = 'bits255.codex.auto_' + key
+        self.root, self.helper, self.sid, self.client = config_root, helper, sid, client
+        key = local_key(helper.peer, {'client': client, 'native_id': sid})
+        self.path = helper.root / (client + '-auto_' + key)
+        self.participant = 'bits255.' + client + '.auto_' + key
         mapping = config_root / 'native-bindings.json'
         legacy = None
         if mapping.exists() or mapping.is_symlink():
             data = read_json(mapping, 16384)
             if set(data) != {'schema_version', 'bindings'} or data['schema_version'] != 1:
                 raise ValueError('Invalid reviewed native map')
-            legacy = data['bindings'].get('codex:' + sid)
+            legacy = data['bindings'].get(client + ':' + sid)
         if legacy is not None:
             if not isinstance(legacy, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,23}', legacy):
                 raise ValueError('Invalid reviewed native mapping')
-            self.path = config_root / 'instances' / ('codex-' + legacy)
+            self.path = config_root / 'instances' / (client + '-' + legacy)
             private(self.path, True)
             manifest = read_json(self.path / 'enrollment.json', 4096)
             self.participant = identifier(manifest['participant'])
-            expected = {'peer': helper.peer, 'client': 'codex', 'native_id': sid,
+            expected = {'peer': helper.peer, 'client': client, 'native_id': sid,
                         'participant': self.participant}
             if read_json(self.path / 'account-native-binding.json', 4096) != expected:
                 raise ValueError('Reviewed native binding mismatch')
@@ -126,7 +128,7 @@ class Mailbox:
             manifest = read_json(self.path / 'trusted-enrollment.json', 4096)
             if manifest.get('native_id') != sid:
                 raise ValueError('Native mailbox mismatch')
-        if manifest.get('client') != 'codex':
+        if manifest.get('client') != client:
             raise ValueError('Mailbox client mismatch')
         self.digest = manifest['sha256']
         self.check()
@@ -155,7 +157,7 @@ def fingerprint(row):
 def notice(box, mid, claim):
     import shlex
     helper = str(Path(__file__).resolve().parent.parent / 'account_session_helper.py')
-    command = shlex.join([sys.executable, helper, 'tool', '--client', 'codex', '--account-file',
+    command = shlex.join([sys.executable, helper, 'tool', '--client', box.client, '--account-file',
                           str(box.root / 'trusted-account.json'), '--native-session', box.sid,
                           '--tool', 'claim_message'])
     return ('Babel mailbox notification for ' + box.participant + '. Message ID: ' + mid +
@@ -265,7 +267,15 @@ class Delivery:
                 box.check()
                 item['state'] = 'submitting'
                 self.persist()
-                self.native.queue(box.sid, metadata['cwd'], notice(box, mid, claim), reserved['expires'])
+                try:
+                    self.native.queue(box.sid, metadata['cwd'], notice(box, mid, claim), reserved['expires'])
+                except NativeRejected:
+                    # A native actor may become busy after discovery. This
+                    # explicit pre-admission rejection permits a later retry;
+                    # the stable claim remains reserved, never acknowledged.
+                    del self.state['submissions'][mid]
+                    self.persist()
+                    return submitted
                 item['state'] = 'accepted'
                 self.persist()
                 submitted += 1
@@ -277,22 +287,24 @@ class Delivery:
 
 
 class Receiver:
-    def __init__(self, account_file, socket_path, *, workers=4):
+    def __init__(self, account_file, socket_path, *, workers=4, client='codex', native_factory=Native):
         self.root, self.helper = account(account_file)
-        self.native = Native(socket_path)
+        self.client, self.native_factory = client, native_factory
+        self.native = native_factory(socket_path)
+        self.status_file = self.root / ('account-wake-status.json' if client == 'codex' else client + '-account-wake-status.json')
         self.pool = ThreadPoolExecutor(max_workers=workers)
         self.workers = workers
         self.futures, self.due, self.statuses = {}, {}, {}
 
     def deliver(self, sid):
-        box = Mailbox(self.root, self.helper, sid)
+        box = Mailbox(self.root, self.helper, sid, client=self.client)
         with ExitStack() as stack:
             stack.enter_context(locked(box.path / 'account-wake.lock'))
             # Cooperate with installed old watchers; don't race their claims.
             for name in ('wake.lock', 'relay-session-wake.lock'):
                 if (box.path / name).exists() or (box.path / name).is_symlink():
                     stack.enter_context(locked(box.path / name, create=False))
-            native = Native(self.native.path, self.native.identity)
+            native = self.native_factory(self.native.path, self.native.identity)
             return Delivery(box, native).step()
 
     def tick(self):
@@ -328,7 +340,7 @@ class Receiver:
         for sid in sorted(eligible, key=lambda sid: (self.due.get(sid, 0), sid))[:max(0, available)]:
             self.futures[sid] = self.pool.submit(self.deliver, sid)
         if changed:
-            write_json(self.root / 'account-wake-status.json',
+            write_json(getattr(self, 'status_file', self.root / 'account-wake-status.json'),
                        {'sessions': self.statuses, 'observed_at': time.time()})
 
     def close(self):

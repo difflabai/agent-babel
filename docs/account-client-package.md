@@ -173,3 +173,8 @@ completion/cleanup retries, boot fencing, bounded/coalesced journals and a fresh
 package install with separate prompt and completion processes. Tests use synthetic
 owned roots and do not launch a real Claude/Codex model, kill a native session, or
 reboot a machine.
+
+Grok Build client modules are bundled as code-only dependencies; installation
+alone does not enable hooks, change Grok settings, replace its binary, or enable
+server-side enrollment. See [Grok automatic wake](grok-automatic-wake.md) for the
+required notification-only native control patch and one-time account activation.

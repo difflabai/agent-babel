@@ -19,6 +19,13 @@ def parse(client, data, *, env=None):
     env = env or {}
     if env.get('CLAUDE_CODE_REMOTE') == 'true':
         raise BridgeError('Hosted automatic lifecycle is unsupported', 403)
+    if client != 'grokbot' and (env.get('GROK_SESSION_ID') or env.get('GROK_HOOK_EVENT')):
+        # Grok imports global Claude/Cursor hooks by default. A compatibility
+        # callback is still Grok; never mint a different client's identity.
+        return None
+    if client == 'grokbot':
+        from .grok_lifecycle import parse as grok_parse
+        return grok_parse(data, env=env)
     if client not in ('codex', 'claude') or not isinstance(data, dict):
         raise BridgeError('Native lifecycle adapter is unavailable')
     sid = data.get('session_id')
