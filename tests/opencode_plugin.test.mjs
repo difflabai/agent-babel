@@ -164,3 +164,17 @@ test('native bridge subprocess uses trusted project directory instead of server 
     assert.equal(output.cwd,workspace);assert.notEqual(output.cwd,process.cwd());await hooks.dispose();
   }finally{process.env.PATH=originalPath;globalThis.setInterval=originalInterval;await rm(root,{recursive:true,force:true});}
 });
+
+
+test('stage_message contract rejects message aliases before helper work without silently renaming',async()=>{
+  const f=await fixture();await f.event();const before=f.calls.length;let asks=0;
+  const context={sessionID:sid,directory:'/synthetic',ask:async()=>{asks++;}};
+  for(const args of [{message:'wrong body key'},{text:'correct',message:'ambiguous'}]){
+    await assert.rejects(f.hooks.tool.babel.execute({operation:'stage_message',arguments:args},context),/requires arguments.text/);
+  }
+  assert.equal(asks,0);assert.equal(f.calls.length,before);
+  const args={recipient:'synthetic.ember',conversation_id:'synthetic-conversation',message_id:'synthetic-stable-message',text:'exact body'};
+  await f.hooks.tool.babel.execute({operation:'stage_message',arguments:args},context);
+  assert.deepEqual(f.calls.at(-1),['tool',{session_id:sid,operation:'stage_message',arguments:args}]);
+  assert.equal(asks,1);assert.match(f.hooks.tool.babel.description,/text, message_id/);await f.hooks.dispose();
+});

@@ -158,3 +158,26 @@ The bridge subprocess always uses the trusted native plugin project directory as
 its working directory, including report writes and selected-detail reads. A
 shared server launched from another directory does not relocate a session
 workspace's `.babel-reports` store; model arguments cannot override that path.
+
+For a fresh automatic bootstrap whose private operator receipt is still pending,
+`list_contacts` waits up to 12 seconds with increasing backoff after scheduling
+the existing shared metadata drainer. Only HTTP 401 authentication **reads** are
+retried; each request receives the remaining network timeout budget and uses the
+existing committed credential pinned to that bootstrap digest. This wait neither
+runs synchronous enrollment nor creates lifecycle evidence, credentials or
+mutation retries. If acceptance races an in-flight 401, one immediate read can
+confirm authentication. Persistent 401 after acceptance, HTTP 403, network/local
+failures and rotating contexts retain their ordinary failure behavior. Existing
+accepted/legacy calls retain the normal helper timeout and no readiness retries.
+A still-pending timeout returns `verified: false`,
+`status: "awaiting_operator_enrollment"` and `retry_after: 20`; that is not a
+connected mailbox or a verified wake.
+
+The native tool describes common operation fields explicitly. A send uses
+`{"operation":"stage_message","arguments":{"recipient":"bits255.dots.ada_20261002","conversation_id":"ID_FROM_LIST_CONTACTS","text":"Your selected message","message_id":"stable-logical-id"}}`.
+Replace the example IDs with the actual contact and stable task IDs; add `reply_to`
+only for a reply. The body key is `text`; unsupported
+`message` aliases or missing text are rejected locally with an actionable error
+before helper work, without silently renaming or queuing anything. Claim and
+acknowledgment operations use the exact `{message_id, claim_id}` fields supplied
+by the notification.
