@@ -180,17 +180,25 @@ class ClaudeWakeTests(DispatcherTests, unittest.TestCase):
     def test_native_launcher_fixture_gets_channel_and_preserves_cli_args_and_exit(self):
         native = self.root / 'synthetic-claude'
         result_file = self.root / 'native-result.json'
-        native.write_text('#!' + sys.executable + '\nimport json,os,sys\nfrom pathlib import Path\n'
+        repo = Path(__file__).resolve().parents[1]
+        native.write_text('#!' + sys.executable + '\nimport json,os,sys,subprocess\nfrom pathlib import Path\n'
+            + 'sys.path.insert(0,' + repr(str(repo)) + ')\nfrom tests.account_client_fixture import cli_command\n'
             + 'p=Path(os.environ[' + repr(claude.ENV) + '])\n'
             + 'import time\nwhile json.loads((p/"runtime.json").read_text())["native_identity"] is None:time.sleep(.01)\n'
+            + 'hook=subprocess.run(cli_command(Path(' + repr(str(repo / 'account_lifecycle_hook.py')) + '),Path('
+            + repr(str(self.account)) + ')),input=json.dumps({"hook_event_name":"SessionStart","session_id":'
+            + repr(SID2) + ',"source":"startup"}),capture_output=True,text=True,timeout=3)\n'
+            + 'assert hook.returncode==0 and not hook.stderr,hook.stderr\n'
             + 'Path(' + repr(str(result_file)) + ').write_text(json.dumps({"argv":sys.argv[1:],'
-            + '"runtime":str(p),"manifest":json.loads((p/"runtime.json").read_text())}))\nsys.exit(17)\n')
+            + '"runtime":str(p),"manifest":json.loads((p/"runtime.json").read_text()),'
+            + '"binding":json.loads((p/"binding.json").read_text())}))\nsys.exit(17)\n')
         native.chmod(0o700)
         with patch.object(claude.sys.stdin, 'isatty', return_value=True):
             self.assertEqual(claude.launch(native, self.account, ['--model', 'synthetic', 'hello world']), 17)
         result = json.loads(result_file.read_text())
         self.assertFalse(Path(result['runtime']).exists())
         self.assertIsNotNone(result['manifest']['native_identity'])
+        self.assertEqual(result['binding'], {'native_id': SID2})
         argv = result['argv']
         self.assertEqual(argv[:3], ['--model', 'synthetic', 'hello world'])
         self.assertEqual(argv[-2:], ['--dangerously-load-development-channels', 'server:' + claude.SERVER])
