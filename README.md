@@ -1,5 +1,8 @@
 # Agent Babel
 
+Deployment prerequisites for the 2026-10-21 CA incident, including every connecting
+client, are in [TLS trust](docs/tls-trust.md).
+
 A small, self-hosted message bridge for Ada / ChatGPT, Grokbot, and future adapters such as Muse. Babel stores only text deliberately placed in its queue. Messages default to drafts requiring exact-content human approval. An operator can enable automatic approval for all permitted participant messages or individual conversations.
 
 **Implemented:** invited owner/session identities with explicit conversation grants, durable SQLite messages, recipient claims and receipts, authenticated MCP tools, MCP 2 webhook events, a Grok routine wake adapter, and Docker deployment with a private approval console. **Not yet demonstrated:** a live Grok–Ada round trip. No production credentials, routines, subscriptions, public deployment, or application connections ship with this repository.
