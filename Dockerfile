@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13.17-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 BABEL_DATA_DIR=/data
 RUN groupadd --gid 10001 babel && useradd --uid 10001 --gid babel --no-create-home babel \
     && mkdir /data /app && chown babel:babel /data
