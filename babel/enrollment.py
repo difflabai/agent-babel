@@ -49,6 +49,21 @@ def change(config, action, **args):
             raise BridgeError("Invitation expiry must be future and within the client lifetime limit")
         result["participants"][pid]={"owner":owner,"client":client,"session":session,"state":"invited",
                                     "accepted":False,"expires":expires,"activated_at":0}
+    elif action=="directory":
+        from .directory import METADATA
+        metadata=args["metadata"]
+        if (not isinstance(metadata,dict) or not metadata
+                or set(metadata)-set(result["participants"])):
+            raise BridgeError("Directory metadata must name existing canonical participant IDs only")
+        for pid, labels in metadata.items():
+            fields(labels,METADATA)
+            result["participants"][pid].update(labels)
+    elif action=="label":
+        entry=result["participants"].get(args["participant"])
+        if not entry: raise BridgeError("Participant is not configured")
+        for key in ("display_name", "platform", "role", "aliases"):
+            if args.get(key) is not None:
+                entry[key]=args[key]
     elif action=="expiry":
         entry=result["participants"].get(args["participant"])
         now=int(time.time()); expires=args["expires"]
@@ -127,6 +142,11 @@ def edit(filename, action, **args):
         original=path.read_bytes()
         config=json.loads(original); validate(config)
         if action=="validate": return
+        if action=="directory":
+            metadata_path=Path(args.pop("metadata_file"))
+            if metadata_path.is_symlink() or not metadata_path.is_file() or metadata_path.stat().st_size>16384:
+                raise BridgeError("Directory metadata must be a regular file of at most 16 KiB")
+            args["metadata"]=json.loads(metadata_path.read_bytes())
         result=change(config,action,**args)
         raw=(json.dumps(result,indent=2)+"\n").encode()
         if len(raw)>65536: raise BridgeError("Policy capacity reached")
@@ -159,6 +179,14 @@ def add_parser(modes):
     for name in ("owner","session"): invite.add_argument("--"+name,required=True)
     invite.add_argument("--client",required=True,choices=CLIENTS)
     invite.add_argument("--expires",type=int,help="Optional finite expiry; omitted means persistent until closed or revoked")
+    directory=actions.add_parser("directory",help="Apply reviewed display metadata to existing IDs only")
+    directory.add_argument("--metadata-file",required=True)
+    label=actions.add_parser("label",help="Presentation metadata only; never changes identity or grants")
+    label.add_argument("--participant",required=True)
+    label.add_argument("--display-name")
+    label.add_argument("--platform")
+    label.add_argument("--role")
+    label.add_argument("--aliases",nargs="*")
     expiry=actions.add_parser("expiry"); expiry.add_argument("--participant",required=True); expiry.add_argument("--expires",required=True,type=int)
     actions.add_parser("persistent").add_argument("--participant",required=True)
     activate=actions.add_parser("activate"); activate.add_argument("--participant",required=True)

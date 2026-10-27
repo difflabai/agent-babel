@@ -58,7 +58,7 @@ TOOLS = [
          "before": {"type": "integer", "minimum": 1}}),
      "annotations": {"readOnlyHint": True, "destructiveHint": False,
                      "idempotentHint": True, "openWorldHint": False}},
-    {"name": "list_contacts", "description": "Discover currently permitted outgoing recipients and their conversation IDs. Auto-session return contacts require reply_to an approved incoming message in that conversation. Call again when instances join or leave; this never exposes unrelated owners or sessions.",
+    {"name": "list_contacts", "description": "Discover currently permitted outgoing recipients with display name, platform, role, owner, aliases and send_to route handle. Names are presentation only. Auto-session return contacts require reply_to an approved incoming message in that conversation. Call again when instances join or leave; this never exposes unrelated owners or sessions.",
      "inputSchema": schema({}),
      "annotations": {"readOnlyHint": True, "destructiveHint": False,
                      "idempotentHint": True, "openWorldHint": False}},
@@ -91,10 +91,10 @@ def dispatch(store, role, request, versions=VERSIONS):
         tools=copy.deepcopy(TOOLS)
         policy=getattr(store,"policy",None)
         if policy and policy.multi_owner:
+            tools[0]["description"] += " Use list_contacts send_to for an unambiguous short route; canonical recipient/conversation_id remain supported."
             stage=tools[0]["inputSchema"]
-            stage["properties"]["recipient"]={"type":"string","description":"A current permitted recipient from list_contacts."}
-            stage["properties"]["conversation_id"]={"type":"string","description":"The matching current conversation ID from list_contacts."}
-            stage["required"].append("conversation_id")
+            stage["properties"]["recipient"]={"type":"string","description":"A send_to handle from list_contacts (recommended), canonical participant ID, or exact name/alias. Bare names stay within your owner; owner/name selects an explicitly permitted cross-owner contact. Collisions require a send_to handle."}
+            stage["properties"]["conversation_id"]={"type":"string","description":"Matching conversation ID; optional with send_to or a unique name. Replies stay in the parent conversation."}
         synthetic = getattr(store, "synthetic", None)
         if synthetic is not None and synthetic.available(store):
             from .synthetic import TOOL

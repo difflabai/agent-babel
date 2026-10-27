@@ -75,7 +75,7 @@ class SessionReplyTests(unittest.TestCase):
         ember = self.scope()
         self.assertFalse(self.contacts())
         parent = self.incoming()
-        self.assertEqual(self.contacts(), [dict(recipient=WORKER, conversation_id=CID)])
+        self.assertEqual([(c["recipient"],c["conversation_id"]) for c in self.contacts()], [(WORKER,CID)])
         ember.claim_message(parent['id'], EMBER, 'reply-claim-0001')
         ember.acknowledge(parent['id'], EMBER, 'reply-claim-0001')
         row = self.reply(scope=ember)['message']
@@ -104,7 +104,7 @@ class SessionReplyTests(unittest.TestCase):
         self.policy.session_generations[GUEST] = 1
         self.leases.row = lambda pid: (dict(self.row) if pid == WORKER else
             dict(self.row, participant=GUEST, conversation='guest_incoming_01') if pid == GUEST else None)
-        self.assertEqual(self.contacts(), [dict(recipient=WORKER, conversation_id=CID)])
+        self.assertEqual([(c["recipient"],c["conversation_id"]) for c in self.contacts()], [(WORKER,CID)])
         for role in (OTHER, GUEST):
             self.assertNotIn(dict(recipient=WORKER, conversation_id=CID), self.contacts(role))
             with self.assertRaises(BridgeError):
@@ -241,7 +241,7 @@ class SessionReplyTests(unittest.TestCase):
                 message_id='http-question-0001', text='Question?')['message']
             call(EMBER, 'claim_message', message_id=parent['id'], claim_id='http-claim-0001')
             call(EMBER, 'acknowledge_message', message_id=parent['id'], claim_id='http-claim-0001')
-            self.assertEqual(call(EMBER, 'list_contacts')['contacts'], [dict(recipient=WORKER, conversation_id=CID)])
+            self.assertEqual([(c["recipient"],c["conversation_id"]) for c in call(EMBER, 'list_contacts')['contacts']], [(WORKER,CID)])
             reply = call(EMBER, 'stage_message', recipient=WORKER, conversation_id=CID, reply_to=parent['id'],
                 message_id='http-reply-000001', text='Approved answer.')['message']
             self.assertEqual([m['id'] for m in call(WORKER, 'receive_messages')['messages']], [reply['id']])

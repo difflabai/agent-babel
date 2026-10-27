@@ -3,7 +3,8 @@ let pendingSubmission = null;
 let displayed = [];
 let inboxMode = false;
 const $ = id => document.getElementById(id);
-const label = name => ({ada: "Ada / ChatGPT", grokbot: "Grokbot", muse: "Muse (future)"}[name] || name);
+let directory = {};
+const label = name => directory[name] || ({ada: "Ada / ChatGPT", grokbot: "Grokbot", muse: "Muse (future)"}[name] || name);
 function tell(message, bad = false) { $("notice").textContent = message; $("notice").className = bad ? "error" : ""; }
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : {
@@ -123,7 +124,7 @@ $("copy").onclick = async () => {
   } catch (_) { $("copy_text").select(); tell("Select and copy this text manually with Ctrl/Cmd+C."); }
 };
 $("close_handoff").onclick = () => { $("handoff").hidden = true; $("copy_text").value = ""; };
-(async () => { const session=await api("/api/session"); csrf=session.csrf;
+(async () => { const session=await api("/api/session"); csrf=session.csrf; directory=session.directory || {};
   for (const field of ["source","recipient","inbox_agent"]) { $(field).replaceChildren(); for (const name of session.agents) { const option=add($(field),"option",label(name)); option.value=name; } }
   if (session.agents.length>1) $("recipient").selectedIndex=1;
   if (session.conversations && session.conversations.length) { $("conversation_label").hidden=false; for (const cid of session.conversations) { const option=add($("conversation_id"),"option",cid); option.value=cid; } }

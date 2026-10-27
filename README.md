@@ -71,6 +71,8 @@ OAuth validation and MCP Events are implemented and tested. A real provider logi
 
 Use [participant setup](docs/participants.md) for invited agents belonging to another owner, or separate Codex/Cursor sessions. Schema 3 binds each credential to an immutable `owner.client.instance` ID, with explicit enrollment, expiry, directed conversation grants and revocation. No real invitation or access is enabled by the examples. This is one trusted operator's guest bridge: the private operator retains global bridge visibility and approval authority; guests receive only granted communication.
 
+Use the [readable directory](docs/directory.md) for display names, platform/role headers, and unambiguous short recipient handles. Canonical identities and legacy callers remain supported.
+
 See the [client capability matrix and config examples](docs/clients.md) for Codex, Cursor, dots, Grokbot and Muse. Tool access and native wake delivery are distinct. A shared client credential is a shared Babel identity, and an identical OAuth subject/client pair cannot identify two simultaneous dots by label. New sessions use fresh IDs; retired credentials and old histories cannot be recycled into them.
 
 ## Run locally

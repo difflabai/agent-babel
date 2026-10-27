@@ -4,6 +4,7 @@ import json
 import re
 import time
 from .core import AGENTS, BridgeError, fields, MAX_HOPS, MAX_CONFIGURED_HOPS
+from .directory import METADATA, validate_metadata
 
 COMPONENT = re.compile(r"[a-z][a-z0-9_-]{0,31}\Z")
 CLIENTS = ("dots","grokbot","codex","cursor","claude","opencode","muse")
@@ -36,8 +37,9 @@ def configure(policy, config, oauth_roles):
     seen=set(); policy.credential_digests={}
     for pid, entry in participants.items():
         if not PARTICIPANT.fullmatch(pid): raise BridgeError("Participant ID must be owner.client.instance")
-        fields(entry,("owner","client","session","state","accepted","expires","activated_at","sha256"),
+        fields(entry,("owner","client","session","state","accepted","expires","activated_at","sha256",*METADATA),
                ("owner","client","session","state","accepted","expires","activated_at"))
+        validate_metadata(entry)
         if (entry["owner"] not in owners or entry["client"] not in CLIENTS
                 or pid != entry["owner"]+"."+entry["client"]+"."+entry["session"]):
             raise BridgeError("Participant identity must match its explicit owner, client and session")
@@ -88,5 +90,6 @@ def configure(policy, config, oauth_roles):
     policy.conversations=conversations; policy.routes=frozenset(routes); policy.agents={}
     for pid, entry in participants.items():
         permissions=sorted(r for r in routes if pid in r[1:])
-        policy.agents[pid]=(digest([entry,owners[entry["owner"]],permissions]),
+        authority={k:v for k,v in entry.items() if k not in METADATA}
+        policy.agents[pid]=(digest([authority,owners[entry["owner"]],permissions]),
                             frozenset(r[2] for r in routes if r[1]==pid))
