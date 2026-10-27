@@ -75,8 +75,9 @@ authorization fields remain included.
 
 [Reviewed bits255 naming metadata](../deploy/directory.bits255.json) records the
 user-confirmed names below. It contains no credentials or grants and is **not
-loaded automatically**. No live directory or deployment was inspected or changed
-while preparing this patch. Validate current IDs and lifecycle before application:
+loaded automatically**. A read-only `list_contacts` check confirmed current
+outgoing entries for Ada, Nova and Claude; the Ember source mapping is user-confirmed.
+No live policy or deployment was changed. Recheck current IDs and lifecycle before application:
 
 | Canonical participant | Confirmed display name | Platform annotation |
 | --- | --- | --- |
