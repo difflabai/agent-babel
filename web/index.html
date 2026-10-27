@@ -10,12 +10,15 @@
 <form id="compose"><label id="conversation_label" hidden>Conversation<select id="conversation_id"></select></label><div class="route">
 <label>From<select id="source"><option value="ada">Ada / ChatGPT</option><option value="grokbot">Grokbot</option><option value="muse">Muse (future)</option></select></label>
 <label>To<select id="recipient"><option value="grokbot">Grokbot</option><option value="ada">Ada / ChatGPT</option><option value="muse">Muse (future)</option></select></label></div>
+<details><summary>Inspect selected canonical route</summary>
+<small id="source_identity"></small><small id="recipient_identity"></small><small id="conversation_identity"></small></details>
 <label>Selected content<textarea id="text" rows="5" required placeholder="Write or paste the exact message to hand off."></textarea></label>
 <label>Reply to bridge message ID <span>(optional)</span><input id="reply_to" placeholder="Preserves the thread and hop limit"></label>
 <button type="submit">Create draft for review</button></form></section>
 <section class="controls"><h2>Receive explicitly</h2><p>Read approved messages for a selected recipient. This does not acknowledge them.</p>
 <div class="inline"><select id="inbox_agent" aria-label="Inbox recipient"><option value="ada">Ada / ChatGPT</option><option value="grokbot">Grokbot</option><option value="muse">Muse (future)</option></select>
-<button id="receive">Read local inbox</button><button class="secondary" id="refresh">Refresh history</button></div></section>
+<button id="receive">Read local inbox</button><button class="secondary" id="refresh">Refresh history</button></div>
+<details><summary>Inspect selected inbox identity</summary><small id="inbox_identity"></small></details></section>
 <p id="notice" role="status" aria-live="polite"></p>
 <section id="handoff" hidden><h2>Manual handoff</h2><p>Prepared locally only. Copy this into the chosen agent yourself. The bridge cannot verify delivery.</p>
 <textarea id="copy_text" rows="10" readonly aria-label="Manual handoff packet"></textarea>

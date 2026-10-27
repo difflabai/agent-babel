@@ -52,6 +52,22 @@ not stored in messages, used in wake payloads, or included in message fingerprin
 Changing presentation metadata does not invalidate credentials, claims, receipts,
 or subscriptions; changing authorization retains its existing effect.
 
+## Operator display and collisions
+
+The private compose dropdowns and approval/history headers append a compact identity
+tag only when readable labels collide. Tags are derived from canonical identity,
+remain stable across display-name edits, and lengthen if their prefixes collide.
+A full hash collision falls back to canonical IDs instead of hiding the distinction.
+Retired identities participate in this comparison, so an old draft and a new worker
+cannot become visually indistinguishable. These tags are presentation only; they
+are not `send_to` route handles or new identities.
+
+Expandable canonical-route details show the selected sender, recipient, and
+conversation before composition and on every message/approval card. Dropdown
+options also expose canonical IDs in their titles. Refreshing directory labels
+preserves the selected canonical values. If a selection becomes inactive, it stays
+visibly unavailable and composition stops until a current contact is chosen.
+
 ## Operator workflow
 
 No public tool can edit the directory. Review metadata against actual canonical
@@ -98,3 +114,19 @@ metadata key attempts to change authority, or validation fails. It never creates
 participants. Temporary workers retain their existing labels until an explicit
 name is verified; no historical worker is assigned “Relay.” Existing messages,
 roots and routes are never rewritten.
+
+## Safe executable rollback
+
+There is no database migration for this feature. Older executables reject the new
+participant metadata keys. Before reverting to such an executable, remove **only**
+`display_name`, `platform`, `role` and `aliases` from each participant in the
+**current** private policy, or prepare a reviewed current policy compatible with
+the older executable. Preserve every owner, canonical ID, credential binding,
+lifecycle value, grant, approval setting and limit from the current policy.
+
+Do not restore a historical policy wholesale: it could undo later revocations,
+grants, approval changes or other authority edits. Coordinate the metadata-only
+policy edit and executable rollback through the existing operator rollout process;
+validate the prepared policy with the target executable before switching. Keep the
+same database and histories. No roots, routes, credentials or approvals need to be
+rewritten or reset for a presentation rollback.

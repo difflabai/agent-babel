@@ -4,6 +4,8 @@ let displayed = [];
 let inboxMode = false;
 const $ = id => document.getElementById(id);
 let directory = {};
+let activeAgents = new Set();
+let sessionLoaded = false;
 const label = name => directory[name] || ({ada: "Ada / ChatGPT", grokbot: "Grokbot", muse: "Muse (future)"}[name] || name);
 function tell(message, bad = false) { $("notice").textContent = message; $("notice").className = bad ? "error" : ""; }
 async function api(path, body) {
@@ -28,7 +30,57 @@ function button(parent, text, action, kind = "secondary") {
     finally { node.disabled = false; }
   });
 }
+function inspectSelectedIdentities() {
+  for (const [field, target, caption] of [["source", "source_identity", "From"], ["recipient", "recipient_identity", "To"],
+      ["inbox_agent", "inbox_identity", "Inbox"]]) {
+    const identity = $(field).value;
+    $(target).textContent = caption + ": " + identity;
+    $(field).title = "Canonical identity: " + identity;
+  }
+  $("conversation_identity").textContent = "Conversation: " + ($("conversation_id").value || "legacy route");
+}
+function selectCanonical(field, value) {
+  if (!Array.from($(field).children).some(option => option.value === value)) {
+    const unavailable = add($(field), "option", "Unavailable: " + (field === "conversation_id" ? value : label(value)));
+    unavailable.value = value; unavailable.disabled = true;
+  }
+  $(field).value = value;
+}
+async function refreshDirectory() {
+  const session = await api("/api/session");
+  csrf = session.csrf; directory = session.directory || {}; activeAgents = new Set(session.agents);
+  for (const field of ["source", "recipient", "inbox_agent"]) {
+    const previous = sessionLoaded ? $(field).value : null;
+    $(field).replaceChildren();
+    for (const name of session.agents) {
+      const option = add($(field), "option", label(name)); option.value = name;
+      option.title = "Canonical identity: " + name;
+    }
+    if (previous !== null) {
+      if (!activeAgents.has(previous)) {
+        const unavailable = add($(field), "option", "Unavailable: " + label(previous));
+        unavailable.value = previous; unavailable.disabled = true;
+      }
+      $(field).value = previous;
+    } else if (field === "recipient" && session.agents.length > 1) $(field).selectedIndex = 1;
+  }
+  const previousConversation = sessionLoaded ? $("conversation_id").value : null;
+  $("conversation_id").replaceChildren();
+  const conversations = session.conversations || [];
+  $("conversation_label").hidden = conversations.length === 0;
+  for (const cid of conversations) { const option = add($("conversation_id"), "option", cid); option.value = cid; }
+  if (previousConversation) {
+    if (!conversations.includes(previousConversation)) {
+      const unavailable = add($("conversation_id"), "option", "Unavailable: " + previousConversation);
+      unavailable.value = previousConversation; unavailable.disabled = true;
+      $("conversation_label").hidden = false;
+    }
+    $("conversation_id").value = previousConversation;
+  }
+  sessionLoaded = true; inspectSelectedIdentities();
+}
 async function reload() {
+  await refreshDirectory();
   inboxMode = false;
   displayed = (await api("/api/history")).messages;
   $("list_title").textContent = "Bridge history";
@@ -40,11 +92,16 @@ function render(messages) {
   if (!messages.length) { add($("messages"), "p", "No bridge messages here yet.", "empty"); return; }
   for (const message of messages) {
     const card = add($("messages"), "article", undefined, "message");
-    add(card, "strong", label(message.source) + " → " + label(message.recipient));
+    const header = add(card, "strong", label(message.source) + " → " + label(message.recipient));
+    header.title = message.source + " → " + message.recipient;
     add(card, "span", message.status, "badge " + message.status);
+    const identity = add(card, "details");
+    add(identity, "summary", "Inspect canonical route");
+    add(identity, "small", "From: " + message.source);
+    add(identity, "small", "To: " + message.recipient);
+    if (message.conversation_id) add(identity, "small", "Conversation: " + message.conversation_id);
     add(card, "pre", message.text);
     add(card, "small", message.id + " · hop " + message.hops + "/4 · " + message.provenance);
-    if (message.conversation_id) add(card,"small","Conversation: "+message.conversation_id);
     if (message.reply_to) add(card, "small", "Reply to " + message.reply_to);
     if (message.receipt) add(card, "small", "Receipt evidence: " + message.receipt + " (does not confirm task completion)");
     const actions = add(card, "div", undefined, "actions");
@@ -70,8 +127,9 @@ function render(messages) {
       });
     }
     if (message.status === "queued" || message.status === "acknowledged") button(actions, "Draft an explicit reply", () => {
-      if (message.conversation_id) $("conversation_id").value=message.conversation_id;
-      $("source").value = message.recipient; $("recipient").value = message.source;
+      if (message.conversation_id) selectCanonical("conversation_id", message.conversation_id);
+      selectCanonical("source", message.recipient); selectCanonical("recipient", message.source);
+      inspectSelectedIdentities();
       $("reply_to").value = message.id; $("text").value = ""; $("text").focus();
       $("compose").scrollIntoView({behavior: "smooth"}); tell("Select the reply text yourself, then create a new draft.");
     });
@@ -89,6 +147,9 @@ $("compose").addEventListener("submit", async event => {
   event.preventDefault();
   const submit = event.target.querySelector("button"); submit.disabled = true;
   try {
+    await refreshDirectory();
+    if (!activeAgents.has($("source").value) || !activeAgents.has($("recipient").value))
+      throw new Error("Selected identity is unavailable. Choose a current contact explicitly.");
     const text = $("text").value;
     if (new TextEncoder().encode(text).length > 16384) throw new Error("Message exceeds 16 KiB in UTF-8.");
     const input = {source: $("source").value, recipient: $("recipient").value, text};
@@ -112,6 +173,8 @@ $("older").onclick = async () => {
 };
 $("receive").onclick = async () => {
   try {
+    await refreshDirectory();
+    if (!activeAgents.has($("inbox_agent").value)) throw new Error("Selected inbox is unavailable.");
     const result = await api("/api/receive", {recipient: $("inbox_agent").value});
     inboxMode = true; $("older").hidden = true;
     $("list_title").textContent = label($("inbox_agent").value) + " — local queued inbox";
@@ -124,8 +187,6 @@ $("copy").onclick = async () => {
   } catch (_) { $("copy_text").select(); tell("Select and copy this text manually with Ctrl/Cmd+C."); }
 };
 $("close_handoff").onclick = () => { $("handoff").hidden = true; $("copy_text").value = ""; };
-(async () => { const session=await api("/api/session"); csrf=session.csrf; directory=session.directory || {};
-  for (const field of ["source","recipient","inbox_agent"]) { $(field).replaceChildren(); for (const name of session.agents) { const option=add($(field),"option",label(name)); option.value=name; } }
-  if (session.agents.length>1) $("recipient").selectedIndex=1;
-  if (session.conversations && session.conversations.length) { $("conversation_label").hidden=false; for (const cid of session.conversations) { const option=add($("conversation_id"),"option",cid); option.value=cid; } }
-  await reload(); })().catch(error => tell(error.message, true));
+for (const field of ["source", "recipient", "inbox_agent", "conversation_id"])
+  $(field).addEventListener("change", inspectSelectedIdentities);
+reload().catch(error => tell(error.message, true));

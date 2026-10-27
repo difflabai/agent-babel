@@ -276,3 +276,52 @@ class DirectoryTests(unittest.TestCase):
                 self.assertEqual((answer['recipient'],answer['conversation_id'],answer['root_id']), (DOT,CID,row['id']))
         finally:
             server.shutdown();server.server_close();thread.join()
+
+    def test_operator_collision_labels_are_distinct_and_retired_names_stay_distinct(self):
+        from babel.directory import operator_labels
+        self.cfg['participants'][SECOND].update(display_name='Juniper',role='Build worker',aliases=['build'])
+        self.reload()
+        labels=operator_labels(self.policy,self.policy.participants)
+        self.assertNotEqual(labels[CODEX],labels[SECOND])
+        self.assertIn('Juniper · codex · Build worker · owner_a [#',labels[CODEX])
+        self.assertLess(len(labels[CODEX].split('[#')[1].rstrip(']')),len(CODEX))
+        self.assertNotIn(CODEX,labels[CODEX])
+        self.cfg['participants'][SECOND]['state']='closed';self.reload()
+        retired=operator_labels(self.policy,self.policy.participants)
+        self.assertEqual(retired[CODEX],labels[CODEX]);self.assertEqual(retired[SECOND],labels[SECOND])
+        with patch('babel.directory.hashlib.sha256') as sha:
+            sha.return_value.hexdigest.return_value='a'*64
+            fallback=operator_labels(self.policy,self.policy.participants)
+        self.assertEqual(fallback[CODEX],CODEX);self.assertEqual(fallback[SECOND],SECOND)
+
+    def test_private_operator_session_disambiguates_canonical_compose_and_approval_targets(self):
+        import threading
+        from urllib.request import Request, ProxyHandler, build_opener
+        from babel.server import Server
+        self.cfg['participants'][SECOND].update(display_name='Juniper',role='Build worker',aliases=['build'])
+        self.reload()
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'policy.json';path.write_text(json.dumps(self.cfg))
+            with patch.dict('os.environ',{'BABEL_AUTH_FILE':str(path)}): server=Server(0,self.store)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            opener=build_opener(ProxyHandler({}));base='http://127.0.0.1:'+str(server.port)
+            def call(route,body=None,csrf=None):
+                headers={'Content-Type':'application/json'}
+                if csrf: headers['X-Babel-CSRF']=csrf
+                request=Request(base+route,data=None if body is None else json.dumps(body).encode(),headers=headers)
+                with opener.open(request,timeout=3) as response:return json.load(response)
+            try:
+                session=call('/api/session')
+                self.assertNotEqual(session['directory'][CODEX],session['directory'][SECOND])
+                self.assertIn(CODEX,session['agents']);self.assertIn(SECOND,session['agents'])
+                for index,recipient in enumerate((CODEX,SECOND)):
+                    row=call('/api/stage',{'source':DOT,'recipient':recipient,'text':'Same selected content',
+                        'conversation_id':CID,'message_id':'operator-collision-'+str(index)},session['csrf'])['message']
+                    self.assertEqual(row['recipient'],recipient);self.assertEqual(row['status'],'draft')
+                rows=call('/api/history')['messages'];self.assertEqual({r['recipient'] for r in rows},{CODEX,SECOND})
+                self.cfg['participants'][SECOND]['state']='closed';path.write_text(json.dumps(self.cfg))
+                session=call('/api/session')
+                self.assertNotIn(SECOND,session['agents'])
+                self.assertNotEqual(session['directory'][CODEX],session['directory'][SECOND])
+            finally:
+                server.shutdown();server.server_close();thread.join()

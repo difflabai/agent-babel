@@ -151,8 +151,10 @@ class Handler(BaseHTTPRequestHandler):
                         except BridgeError: continue
                         participants.append(pid)
                     conversations=[cid for cid,c in policy.conversations.items() if c["state"]=="active"]
-                from .directory import describe, label
-                directory={pid:label(describe(policy,pid)) for pid in participants}
+                from .directory import operator_labels
+                # Retired identities can still appear in approval/history views.
+                known=policy.participants if policy and policy.multi_owner else participants
+                directory=operator_labels(policy,known)
                 self.respond(200, {"csrf": self.server.csrf, "agents": participants,
                                    "conversations":conversations, "directory":directory})
             elif path == "/api/health":

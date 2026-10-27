@@ -39,6 +39,28 @@ def label(contact):
     return " · ".join(str(contact[k]) for k in ("display_name", "platform", "role", "owner") if contact.get(k))
 
 
+def operator_labels(policy, participants):
+    """Compact, distinct labels for the operator's global identity inventory."""
+    base = {pid: label(describe(policy, pid)) for pid in participants}
+    result = dict(base)
+    lengths = {pid: 0 for pid in base}
+    while True:
+        groups = {}
+        for pid, value in result.items():
+            groups.setdefault(value.casefold(), []).append(pid)
+        collisions = [group for group in groups.values() if len(group) > 1]
+        if not collisions:
+            return result
+        for group in collisions:
+            for pid in group:
+                lengths[pid] = max(8, lengths[pid] + 4)
+                if lengths[pid] > 64:
+                    # Even a full digest collision must remain distinguishable.
+                    return {p: p for p in base}
+                tag = hashlib.sha256(pid.encode()).hexdigest()[:lengths[pid]]
+                result[pid] = base[pid] + " [#" + tag + "]"
+
+
 def handle(source, recipient, conversation):
     binding = json.dumps([source, recipient, conversation], separators=(",", ":"))
     return "contact:" + hashlib.sha256(binding.encode()).hexdigest()[:20]
