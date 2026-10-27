@@ -9,6 +9,7 @@ import time
 from urllib.parse import urlsplit
 from .core import AGENTS, BridgeError, fields, MAX_HOPS
 from .session_replies import reply_routes
+from . import directory
 
 TOKEN = re.compile(r"[A-Za-z0-9_-]{32,256}\Z")
 DIGEST = re.compile(r"[a-f0-9]{64}\Z")
@@ -178,6 +179,12 @@ class ScopedStore:
         self.guard()
         if not isinstance(source,str) or not isinstance(recipient,str) or source != self.role:
             raise BridgeError("Agent route is not permitted", 403)
+        parent = kwargs.get("reply_to")
+        parent_row = self.message_status(parent, self.role) if parent else None
+        recipient, conversation = directory.resolve(self.policy, source, recipient,
+            kwargs.get("conversation_id"), self.contacts(self.role), parent_row)
+        if conversation is not None:
+            kwargs["conversation_id"] = conversation
         # Only a current trusted return capability may extend a captured scope.
         if recipient not in self.recipients and (not self.policy or
                 (kwargs.get("conversation_id"),source,recipient) not in reply_routes(self.policy)):
@@ -185,17 +192,15 @@ class ScopedStore:
         if self.policy:
             self.policy.assert_route(kwargs.get("conversation_id"),source,recipient)
             kwargs["policy"]=self.policy
-        parent = kwargs.get("reply_to")
-        if parent:
-            self.message_status(parent, self.role)
-        return self.store.stage(source, recipient, **kwargs)
+        result = self.store.stage(source, recipient, **kwargs)
+        return {**result, "message": directory.annotate(self.policy, result["message"])}
 
     def inbox(self, role, **kwargs):
         self.guard()
         if role != self.role:
             raise BridgeError("Agent identity mismatch", 403)
         if self.policy: kwargs["visibility"]=self.policy.visible_pairs(role)
-        return self.store.inbox(role, **kwargs)
+        return [directory.annotate(self.policy, row) for row in self.store.inbox(role, **kwargs)]
 
     def contacts(self, role):
         self.guard()
@@ -205,8 +210,7 @@ class ScopedStore:
             routes=self.policy.visible_pairs(role)
         else:
             routes=[(None,role,recipient) for recipient in sorted(self.recipients)]
-        return [{"recipient":recipient,"conversation_id":conversation}
-                for conversation,source,recipient in routes if source==role]
+        return directory.contacts(self.policy, role, routes)
 
     def acknowledge(self, message_id, role, claim_id=None):
         self.guard()
@@ -217,14 +221,14 @@ class ScopedStore:
             raise BridgeError("Message not available to recipient", 404)
         if claim_id is None:
             raise BridgeError("Public receipt requires claim_message and its claim_id", 409)
-        return self.store.acknowledge_claim(message_id, role, claim_id)
+        return directory.annotate(self.policy, self.store.acknowledge_claim(message_id, role, claim_id))
 
     def history(self, role, **kwargs):
         self.guard()
         if role != self.role:
             raise BridgeError("Agent identity mismatch", 403)
         if self.policy: kwargs["visibility"]=self.policy.visible_pairs(role)
-        return self.store.history(role, **kwargs)
+        return [directory.annotate(self.policy, row) for row in self.store.history(role, **kwargs)]
 
     def message_status(self, message_id, role):
         self.guard()
@@ -235,7 +239,7 @@ class ScopedStore:
         if self.policy:
             try: self.policy.check_row(row)
             except BridgeError: raise BridgeError("Bridge message not found",404) from None
-        return row
+        return directory.annotate(self.policy, row)
 
     def claim_message(self, message_id, role, claim_id):
         self.guard()
@@ -244,4 +248,7 @@ class ScopedStore:
         row = self.message_status(message_id, role)
         if row["recipient"] != role:
             raise BridgeError("Bridge message not found", 404)
-        return self.store.claim_message(message_id, role, claim_id)
+        result = self.store.claim_message(message_id, role, claim_id)
+        if "message" in result:
+            result = {**result, "message": directory.annotate(self.policy, result["message"])}
+        return result

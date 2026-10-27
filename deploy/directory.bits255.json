@@ -1,0 +1,21 @@
+{
+  "bits255.dots.ada_20261002": {
+    "display_name": "Ember",
+    "platform": "ChatGPT Work",
+    "aliases": ["ember"]
+  },
+  "bits255.grokbot.grok_20261002": {
+    "display_name": "Ada",
+    "platform": "Grok",
+    "aliases": ["ada"]
+  },
+  "bits255.muse.ai_20261002": {
+    "display_name": "Nova",
+    "aliases": ["nova"]
+  },
+  "bits255.claude.duet_20261025": {
+    "display_name": "Claude",
+    "platform": "Anthropic",
+    "aliases": ["claude"]
+  }
+}

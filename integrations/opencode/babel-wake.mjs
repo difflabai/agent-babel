@@ -110,13 +110,13 @@ export default async function BabelWake({ client, directory }, options = {}) {
       babel: {
         description: 'Use Babel through this exact session mailbox. No setup or filesystem access is needed. ' +
           'Verify list_contacts first; claim and acknowledge wake messages with their exact reserved claim. ' +
-          'stage_message arguments are recipient, conversation_id, text, message_id, optional reply_to; use text, never message. ' +
+          'stage_message arguments are recipient, text, message_id, optional conversation_id and reply_to; prefer list_contacts send_to as recipient; use text, never message. ' +
           'claim_message and acknowledge_message arguments are message_id and claim_id. ' +
           'stage_report is the local compact reporting tool.',
         args: {
           operation: { type: 'string', enum: TOOLS },
           arguments: { type: 'object', additionalProperties: true, description:
-            'Operation arguments. stage_message requires recipient, conversation_id, text, message_id (optional reply_to). ' +
+            'Operation arguments. stage_message requires recipient, text, message_id (optional conversation_id and reply_to). Use list_contacts send_to as recipient to bind the conversation. ' +
             'claim_message and acknowledge_message require message_id and claim_id. list_contacts takes {}.',
             properties: { text: { type: 'string', description: 'Exact selected message body for stage_message; the key message is unsupported.' },
               recipient: { type: 'string' }, conversation_id: { type: 'string' }, message_id: { type: 'string' },
@@ -129,7 +129,7 @@ export default async function BabelWake({ client, directory }, options = {}) {
             throw new Error('Invalid Babel operation/arguments; session and credential routing are not inputs.');
           }
           if (input.operation === 'stage_message' && (typeof input.arguments.text !== 'string' || 'message' in input.arguments)) {
-            throw new Error('stage_message requires arguments.text, plus recipient, conversation_id and message_id; arguments.message is unsupported.');
+            throw new Error('stage_message requires arguments.text, plus recipient and message_id; arguments.message is unsupported.');
           }
           const sid = context.sessionID;
           if (disposed || context.directory !== directory || !sessions.has(sid)) {
@@ -192,9 +192,9 @@ export default async function BabelWake({ client, directory }, options = {}) {
           'Routine progress/tool/status activity stays local. Questions use question_state pending/resolved plus revision; ' +
           'experiment transitions use from_state/to_state. Retry stable logical IDs. Read selected private details with read_report, not account files.',
         'For a user-requested introduction, call babel with valid JSON such as ' +
-          '{"operation":"stage_message","arguments":{"recipient":"bits255.dots.ada_20261002","conversation_id":"ID_FROM_LIST_CONTACTS","text":"Your selected message","message_id":"stable-logical-id"}}. ' +
-          'Replace the example conversation and message IDs with the actual contact and stable task IDs. Add reply_to only for a reply. ' +
-          'The exact body key is text, never message. Use recipient/conversation_id from list_contacts and stable message_id. ' +
+          '{"operation":"stage_message","arguments":{"recipient":"SEND_TO_FROM_LIST_CONTACTS","text":"Your selected message","message_id":"stable-logical-id"}}. ' +
+          'Replace the example recipient with the listed send_to and use a stable message ID. Add reply_to only for a reply. ' +
+          'The exact body key is text, never message. Use send_to from list_contacts as recipient (or canonical recipient/conversation_id) and stable message_id. ' +
           'For claim_message and acknowledge_message, arguments are {message_id,claim_id}, using the exact reserved claim. ' +
           'Queued means approved for delivery, draft means awaiting owner approval. Never infer wake or completion from queue acceptance. ' +
           'Keep credentials/private account content out of messages and reports.',

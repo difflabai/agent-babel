@@ -139,7 +139,7 @@ class ParticipantTests(unittest.TestCase):
         with patch("time.time",return_value=time.time()+10*365*86400):
             self.store.sync_policy(self.policy)
             self.assertEqual(self.policy.authenticate("Bearer "+TOKENS[DOT]),DOT)
-            self.assertEqual(self.scoped(DOT).contacts(DOT),[{"recipient":GUEST,"conversation_id":"chat_shared_01"}])
+            self.assertEqual([(c["recipient"], c["conversation_id"]) for c in self.scoped(DOT).contacts(DOT)], [(GUEST,"chat_shared_01")])
         cfg["participants"][GUEST]["state"]="revoked";self.replace_policy(cfg)
         with self.assertRaises(BridgeError):self.policy.authenticate("Bearer "+TOKENS[GUEST])
         cfg["participants"][GUEST]["state"]="active"
@@ -219,8 +219,8 @@ class ParticipantTests(unittest.TestCase):
         stage=tools[0]["inputSchema"]
         self.assertNotIn("enum",stage["properties"]["recipient"])
         self.assertNotIn("enum",stage["properties"]["conversation_id"])
-        self.assertEqual(self.scoped(DOT).contacts(DOT),[{"recipient":GUEST,"conversation_id":"chat_shared_01"}])
-        self.assertIn("conversation_id",stage["required"])
+        self.assertEqual([(c["recipient"], c["conversation_id"]) for c in self.scoped(DOT).contacts(DOT)], [(GUEST,"chat_shared_01")])
+        self.assertNotIn("conversation_id",stage["required"])
         self.assertNotIn("policy",str(tools));self.assertNotIn(CODEX,str(tools))
         for name in ("approve_message","enroll_participant","run_command"):
             result=dispatch(self.scoped(GUEST),GUEST,{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":{}}})
@@ -238,7 +238,7 @@ class ParticipantTests(unittest.TestCase):
             fresh=Policy.load(path);fresh_scope=ScopedStore(self.store,DOT,fresh.agents[DOT][1],fresh)
             rpc={"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_contacts","arguments":{}}}
             contacts=json.loads(dispatch(fresh_scope,DOT,rpc)["result"]["content"][0]["text"])["contacts"]
-            self.assertIn({"recipient":CODEX,"conversation_id":"dynamic_chat_01"},contacts)
+            self.assertIn((CODEX,"dynamic_chat_01"), [(c["recipient"],c["conversation_id"]) for c in contacts])
             self.assertNotIn(SECOND,str(contacts))
             cfg["participants"][CODEX]["state"]="closed";path.write_text(json.dumps(cfg))
             fresh=Policy.load(path)
