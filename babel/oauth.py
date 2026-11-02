@@ -132,7 +132,17 @@ class OAuthPolicy(Policy):
                     raise rejection("scope_missing", "Required OAuth scope is missing", 403)
                 role = self.bindings.get((claims["sub"],claims["azp"]))
                 if role is None:
-                    raise rejection("principal_unbound", "OAuth principal is not authorized for a bridge role", 403)
+                    # Compare only with the existing allowlist. Emit no identity,
+                    # client identifier or claim value, and authorize no new pair.
+                    subject_known = any(subject == claims["sub"] for subject, _ in self.bindings)
+                    client_known = any(client == claims["azp"] for _, client in self.bindings)
+                    reason = {
+                        (True, False): "principal_client_mismatch",
+                        (False, True): "principal_subject_mismatch",
+                        (True, True): "principal_pair_mismatch",
+                        (False, False): "principal_unknown",
+                    }[subject_known, client_known]
+                    raise rejection(reason, "OAuth principal is not authorized for a bridge role", 403)
             except BridgeError:
                 raise
             except self.jwt.PyJWTError as exc:

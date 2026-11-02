@@ -91,7 +91,11 @@ class AuthDiagnosticsTests(unittest.TestCase):
             ("Bearer " + self.token({"scope": "DO_NOT_LOG_SCOPE"}), 403,
              "Required OAuth scope is missing", "scope_missing"),
             ("Bearer " + self.token({"azp": "DO_NOT_LOG_OTHER_CLIENT"}), 403,
-             "OAuth principal is not authorized for a bridge role", "principal_unbound"),
+             "OAuth principal is not authorized for a bridge role", "principal_client_mismatch"),
+            ("Bearer " + self.token({"sub": "DO_NOT_LOG_OTHER_SUBJECT"}), 403,
+             "OAuth principal is not authorized for a bridge role", "principal_subject_mismatch"),
+            ("Bearer " + self.token({"sub": "DO_NOT_LOG_OTHER_SUBJECT", "azp": "DO_NOT_LOG_OTHER_CLIENT"}), 403,
+             "OAuth principal is not authorized for a bridge role", "principal_unknown"),
         ]
         for header, status, message, reason in cases:
             with self.subTest(reason=reason):
@@ -105,6 +109,15 @@ class AuthDiagnosticsTests(unittest.TestCase):
             self.assertEqual(self.policy.authenticate("Bearer " + self.token({"iat": self.now-1})), "ada")
             log.assert_not_called()
         self.assertEqual(self.policy.agents, fingerprint)
+
+    def test_known_subject_and_client_cannot_be_cross_paired(self):
+        import copy
+        config = copy.deepcopy(self.config)
+        config["oauth"]["principals"]["grokbot"] = {
+            "subject": "DO_NOT_LOG_OTHER_SUBJECT", "client_id": "DO_NOT_LOG_OTHER_CLIENT"}
+        self.policy = oauth.OAuthPolicy(config, {"keys": [self.jwk]})
+        self.check_rejection("Bearer " + self.token({"azp": "DO_NOT_LOG_OTHER_CLIENT"}), 403,
+            "OAuth principal is not authorized for a bridge role", "principal_pair_mismatch")
 
     def test_enrollment_and_participant_checks_remain_enforced(self):
         self.policy.multi_owner = True
