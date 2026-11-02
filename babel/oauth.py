@@ -3,12 +3,20 @@ The external provider owns authorization, PKCE, registration, login and consent.
 """
 import hashlib
 import json
+import logging
 from pathlib import Path
 from urllib.parse import urlsplit
 from .auth import Policy, public_origin, TOKEN
 from .core import BridgeError, fields
 
 SCOPE = "babel"
+LOG = logging.getLogger(__name__)
+
+def rejection(reason, message, status=401):
+    # Fixed categories only: never log headers, tokens, claims, identities or
+    # exception text. Client-visible errors remain deliberately unchanged.
+    LOG.warning("Babel authentication rejected: reason=%s status=%d", reason, status)
+    return BridgeError(message, status)
 
 class OAuthPolicy(Policy):
     def __init__(self, config, jwks=None):
@@ -87,44 +95,65 @@ class OAuthPolicy(Policy):
 
     def authenticate(self, header):
         if not isinstance(header,str) or not header.startswith("Bearer "):
-            raise BridgeError("Agent authentication required",401)
+            reason = "authorization_missing" if header is None else "authorization_scheme_invalid"
+            raise rejection(reason, "Agent authentication required")
         token = header[7:]
         if len(token)>8192:
-            raise BridgeError("Invalid agent credential",401)
+            raise rejection("credential_oversized", "Invalid agent credential")
         if "." not in token:
             if not TOKEN.fullmatch(token):
-                raise BridgeError("Invalid agent credential",401)
+                raise rejection("credential_format_invalid", "Invalid agent credential")
             digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
             import secrets
             role = next((role for role, expected in self.static_digests.items()
                          if secrets.compare_digest(digest,expected)),None)
             if role is None:
-                raise BridgeError("Invalid agent credential",401)
+                raise rejection("static_credential_unrecognized", "Invalid agent credential")
         else:
+            reason = "token_malformed"
             try:
                 header_data = self.jwt.get_unverified_header(token)
                 # kid is only a lookup into already trusted local keys. Never follow
                 # jku/x5u or select an algorithm from attacker-controlled input.
                 if header_data.get("alg") != "RS256" or any(k in header_data for k in ("jku","x5u","jwk","crit")):
+                    reason = "token_header_rejected"
                     raise ValueError()
                 key = self.keys.get(header_data.get("kid"))
                 if key is None:
+                    reason = "signing_key_unknown"
                     raise ValueError()
+                reason = "token_invalid"
                 claims = self.jwt.decode(token,key,algorithms=["RS256"],issuer=self.oauth["issuer"],
                     audience=self.oauth["resource"],options={"require":["exp","iat","iss","aud","sub","azp","scope"]},leeway=0)
                 if type(claims["exp"]) is not int or type(claims["iat"]) is not int or not 0 < claims["exp"]-claims["iat"] <= 900:
+                    reason = "token_lifetime_invalid"
                     raise ValueError()
                 if not isinstance(claims["scope"],str) or SCOPE not in claims["scope"].split():
-                    raise BridgeError("Required OAuth scope is missing",403)
+                    raise rejection("scope_missing", "Required OAuth scope is missing", 403)
                 role = self.bindings.get((claims["sub"],claims["azp"]))
                 if role is None:
-                    raise BridgeError("OAuth principal is not authorized for a bridge role",403)
+                    raise rejection("principal_unbound", "OAuth principal is not authorized for a bridge role", 403)
             except BridgeError:
                 raise
-            except (self.jwt.PyJWTError,ValueError,TypeError,KeyError):
-                raise BridgeError("Invalid OAuth access token",401) from None
-        self.assert_active(role)
+            except self.jwt.PyJWTError as exc:
+                categories = (
+                    (self.jwt.ExpiredSignatureError, "token_expired"),
+                    (self.jwt.ImmatureSignatureError, "token_not_yet_valid"),
+                    (self.jwt.InvalidIssuedAtError, "issued_at_invalid"),
+                    (self.jwt.InvalidAudienceError, "audience_mismatch"),
+                    (self.jwt.InvalidIssuerError, "issuer_mismatch"),
+                    (self.jwt.MissingRequiredClaimError, "required_claim_missing"),
+                    (self.jwt.InvalidSignatureError, "signature_invalid"),
+                )
+                reason = next((label for kind, label in categories if isinstance(exc, kind)), "token_invalid")
+                raise rejection(reason, "Invalid OAuth access token") from None
+            except (ValueError,TypeError,KeyError):
+                raise rejection(reason, "Invalid OAuth access token") from None
+        try:
+            self.assert_active(role)
+        except BridgeError as exc:
+            raise rejection("participant_inactive", str(exc), exc.status) from None
         if self.multi_owner and "." in token and claims["iat"]<self.participants[role]["activated_at"]:
-            raise BridgeError("OAuth token predates this instance enrollment",401)
+            raise rejection("token_predates_enrollment", "OAuth token predates this instance enrollment")
         self.limit_request(role)
         return role

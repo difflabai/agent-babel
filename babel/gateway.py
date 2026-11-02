@@ -3,6 +3,7 @@ from urllib.parse import urlsplit
 import threading
 import os
 from .auth import Policy, ScopedStore, public_origin
+from .oauth import rejection, LOG
 from .core import BridgeError, Store
 from .mcp import dispatch
 from .server import Handler, HTTP_VERSIONS, BoundedServer
@@ -100,10 +101,21 @@ class GatewayHandler(Handler):
         self.request_policy=self.server.current_policy()
         headers = self.headers.get_all("Authorization", [])
         if len(headers) != 1:
-            raise BridgeError("Agent authentication required", 401)
+            raise rejection("authorization_missing" if not headers else "authorization_multiple", "Agent authentication required")
         return self.request_policy.authenticate(headers[0])
 
     def fail(self, exc):
+        categories = {
+            "Invalid gateway Host": "gateway_host_invalid",
+            "Trusted HTTPS proxy is required": "gateway_proxy_invalid",
+            "Foreign Origin denied": "gateway_origin_denied",
+            "Cross-site access denied": "gateway_cross_site_denied",
+            "Participant access is unavailable": "participant_inactive",
+            "Participant authorization changed": "authorization_changed",
+            "Conversation route is not permitted": "route_denied",
+        }
+        if str(exc) in categories:
+            LOG.warning("Babel request rejected: reason=%s status=%d", categories[str(exc)], exc.status)
         extra = None
         if exc.status in (401,403) and hasattr(self.server.policy,"oauth"):
             challenge = 'Bearer resource_metadata="' + self.server.origin + '/.well-known/oauth-protected-resource", scope="babel", error="' + ("invalid_token" if exc.status == 401 else "insufficient_scope") + '"'
