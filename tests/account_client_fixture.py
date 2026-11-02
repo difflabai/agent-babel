@@ -33,7 +33,9 @@ class DispatcherTests:
         self.now=time.time()-100
         self.uid=patch('pwd.getpwuid',return_value=SimpleNamespace(pw_name='mikkel'));self.uid.start()
         self.tokens=iter(['synthetic-only-credential-'+str(n).zfill(32) for n in range(20)])
-        self.helper=Helper(self.root/'.config/255bits/agent-babel/automatic-instances','mikkel@pop-os',token_factory=lambda:next(self.tokens))
+        instance_root=self.root/'.config/255bits/agent-babel/automatic-instances'
+        instance_root.mkdir(mode=0o700,parents=True)
+        self.helper=Helper(instance_root,'mikkel@pop-os',token_factory=lambda:next(self.tokens))
         self.dispatcher=Dispatcher(self.helper,clock=lambda:self.now,invocation=lambda:'fixture-runtime-1')
     def tearDown(self): self.uid.stop(); self.tmp.cleanup()
     def hook(self,event='SessionStart',client='codex',sid=SID,**kwargs):

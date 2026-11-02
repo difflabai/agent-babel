@@ -127,7 +127,7 @@ class Dispatcher:
         # Optional reviewed mapping is shared with helper tool calls. No mapping
         # means a distinct new context; no other account/instance is auto-adopted.
         bind_reviewed(self.helper,self.helper.root.parent,ctx)
-        path = self.helper.path(ctx)
+        path = self.helper.path(ctx, create=True)
         fd = os.open(path/'lifecycle.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
         try:
             fcntl.flock(fd,fcntl.LOCK_EX)

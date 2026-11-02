@@ -23,6 +23,11 @@ BASE='https://babel.255bits.com/mcp/v1'
 TOOLS=frozenset(('list_contacts','stage_message','receive_messages','claim_message','acknowledge_message','message_status','bridge_history','stage_report','read_report'))
 
 
+class SessionNotPrepared(BridgeError):
+    def __init__(self):
+        super().__init__('Native session is not prepared; its trusted startup hook must prepare it',409)
+
+
 def private(path, directory=False):
     for item in (path,*path.parents):
         if item.is_symlink():raise BridgeError('Account helper refuses symlinked paths')
@@ -92,8 +97,8 @@ class Helper:
         self.root,self.peer=Path(root),peer
         self.token_factory=token_factory or (lambda:secrets.token_hex(32))
         self.legacy=None
-        if not self.root.exists():self.root.mkdir(mode=0o700,parents=True)
-        private(self.root,True)
+        # Constructing a reader must not create state outside a session's sandbox.
+        if self.root.exists() or self.root.is_symlink():private(self.root,True)
 
     def use_legacy(self,ctx,path):
         path=Path(path);private(path,True)
@@ -111,18 +116,24 @@ class Helper:
         else:save(binding,json.dumps(expected)+'\n')
         self.legacy=(ctx,path)
 
-    def path(self,ctx):
+    def path(self,ctx,*,create=False):
         if self.legacy:
             if self.legacy[0]!=ctx:raise BridgeError('Legacy native context mismatch')
             private(self.legacy[1],True);return self.legacy[1]
         path=self.root/(ctx['client']+'-auto_'+local_key(self.peer,ctx))
-        if not path.exists():path.mkdir(mode=0o700)
+        if create:
+            if not self.root.exists():self.root.mkdir(mode=0o700,parents=True)
+            private(self.root,True)
+            if not path.exists():path.mkdir(mode=0o700)
+        elif not self.root.exists() or not path.exists():
+            raise SessionNotPrepared()
+        private(self.root,True)
         private(path,True)
         return path
 
     def prepare(self,ctx,resume_event=None):
         import fcntl
-        path=self.path(ctx)
+        path=self.path(ctx,create=True)
         fd=os.open(path/'lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
         try:
             fcntl.flock(fd,fcntl.LOCK_EX)
@@ -259,11 +270,13 @@ def main():
         else:
             if not a.tool:raise BridgeError('Select a helper tool')
             path=helper.path(ctx)
-            if not (path/'token').exists():raise BridgeError('This native session is not bootstrapped')
+            if not (path/'token').exists():raise SessionNotPrepared()
             result=helper.call(path,a.tool,data)
             from babel.reporting import with_reporting_policy
             result=with_reporting_policy(path,result)
         print(json.dumps(result))
+    except SessionNotPrepared:
+        p.exit(2,'Babel native session is not prepared; its trusted startup hook must prepare it. No session state was created.\n')
     except (BridgeError,OSError,ValueError,KeyError):
         # Never dump exception URLs, tokens, config, headers or provider payloads.
         p.exit(2,'Babel account helper failed; preserve its existing instance and private enrollment request.\n')
