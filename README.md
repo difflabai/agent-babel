@@ -180,7 +180,7 @@ calls. Babel's broker alone cannot establish that guarantee for a hosted ChatGPT
 Grok, or Codex receiver. The synthetic wake-claim tests count stub enqueue attempts
 and explicitly reproduce both remaining external-receiver limitations.
 
-Limits: 16 KiB UTF-8/message, 64 KiB HTTP requests, 30 new messages/sender/minute and a separate 300/owner/minute budget shared by its sessions, 100 hops/thread by default (optional schema 3 per-conversation caps up to 100), 10,000 retained messages, four active MCP subscriptions/recipient and 100 retained subscription identities. Both message budgets use durable rolling 60-second windows; 429 errors identify the exhausted budget. Retries of an existing identical message ID do not consume new-message capacity. Capacity failure closes safely instead of silently deleting dedup history. Review storage usage and arrange operator maintenance/backups; there is no automatic destructive pruning.
+Limits: 16 KiB UTF-8/message, 64 KiB HTTP requests, 30 new messages/sender/minute and a separate 300/owner/minute budget shared by its sessions, 100 hops/thread by default (optional schema 3 per-conversation caps up to 100), 100,000 retained messages, four active MCP subscriptions/recipient and 100 retained subscription identities. Both message budgets use durable rolling 60-second windows; 429 errors identify the exhausted budget. Retries of an existing identical message ID do not consume new-message capacity. Capacity failure closes safely instead of silently deleting dedup history. Review storage usage and arrange operator maintenance/backups; there is no automatic destructive pruning.
 
 Back up online:
 ```sh

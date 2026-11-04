@@ -17,6 +17,7 @@ MAX_HOPS = 100
 MAX_CONFIGURED_HOPS = 100
 RATE_LIMIT = 30
 OWNER_RATE_LIMIT = 300
+MAX_RETAINED_MESSAGES = 100000
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}\Z")
 
 class BridgeError(Exception):
@@ -197,7 +198,7 @@ class Store:
                 if expected != actual:
                     raise BridgeError("Message ID already belongs to different content", 409)
                 return {"message": existing, "duplicate": True}
-            if self.db.execute("SELECT COUNT(*) FROM messages").fetchone()[0] >= 10000:
+            if self.db.execute("SELECT COUNT(*) FROM messages").fetchone()[0] >= MAX_RETAINED_MESSAGES:
                 raise BridgeError("Bridge message capacity reached; operator maintenance required", 507)
             hops, root_id = 1, message_id
             if reply_to:
