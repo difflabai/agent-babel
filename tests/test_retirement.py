@@ -1,10 +1,14 @@
+import json
+import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from babel.core import BridgeError, Store, THREAD_IDLE_SECONDS
+from babel.core import BridgeError, ROOT, Store, THREAD_IDLE_SECONDS
 
 
 NOW = 2000000000
@@ -150,6 +154,22 @@ class RetirementTests(unittest.TestCase):
                     self.assertEqual(restored.db.execute('PRAGMA user_version').fetchone()[0], 4)
                 finally:
                     restored.close()
+
+    def test_cli_preview_apply_and_repeat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / 'bridge.sqlite3')
+            with patch('babel.core.time.time', return_value=1):
+                store.stage('ada', 'grokbot', 'historical', message_id='cli-history-0001')
+                store.approve('cli-history-0001')
+                store.acknowledge('cli-history-0001', 'grokbot')
+            store.close()
+            for options, retired, eligible in ((['--dry-run'], 0, 1), ([], 1, 1), (['--dry-run'], 1, 0)):
+                result = subprocess.run([sys.executable, '-m', 'babel', 'retire', *options],
+                    cwd=ROOT, env={**os.environ, 'BABEL_DATA_DIR': tmp},
+                    capture_output=True, text=True, check=True, timeout=15)
+                data = json.loads(result.stdout)
+                self.assertEqual(data['retired_messages'], retired)
+                self.assertEqual(data['eligible_messages'], eligible)
 
 
 if __name__ == '__main__':

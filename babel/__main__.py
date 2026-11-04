@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 from .core import AGENTS, BridgeError, Store
 from .mcp import stdio
@@ -65,6 +64,7 @@ def main():
             finally:
                 store.close()
         elif args.mode == "retire":
+            import json
             store = Store()
             try:
                 print(json.dumps(store.retire_threads(dry_run=args.dry_run)), flush=True)
