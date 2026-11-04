@@ -18,6 +18,7 @@ MAX_CONFIGURED_HOPS = 100
 RATE_LIMIT = 30
 OWNER_RATE_LIMIT = 300
 MAX_RETAINED_MESSAGES = 100000
+THREAD_IDLE_SECONDS = 7 * 24 * 60 * 60
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}\Z")
 
 class BridgeError(Exception):
@@ -119,6 +120,8 @@ class Store:
         if "gone" not in {row[1] for row in self.db.execute("PRAGMA table_info(subscriptions)")}:
             self.db.execute("ALTER TABLE subscriptions ADD COLUMN gone INTEGER NOT NULL DEFAULT 0")
         self.db.execute("CREATE INDEX IF NOT EXISTS owner_rate ON messages(source_owner,created)")
+        from .retirement import initialize
+        initialize(self.db)
         self.db.execute("PRAGMA user_version=4")
         self.db.commit()
         if str(self.path) != ":memory:":
@@ -198,11 +201,17 @@ class Store:
                 if expected != actual:
                     raise BridgeError("Message ID already belongs to different content", 409)
                 return {"message": existing, "duplicate": True}
-            if self.db.execute("SELECT COUNT(*) FROM messages").fetchone()[0] >= MAX_RETAINED_MESSAGES:
-                raise BridgeError("Bridge message capacity reached; operator maintenance required", 507)
+            from .retirement import active_count, retire
+            if active_count(self.db) >= MAX_RETAINED_MESSAGES:
+                # Reclaim eligible threads even if the scheduled sweep was missed.
+                retire(self.db, time.time(), THREAD_IDLE_SECONDS)
+                if active_count(self.db) >= MAX_RETAINED_MESSAGES:
+                    raise BridgeError("Bridge active-message capacity reached; unresolved work requires operator review", 507)
             hops, root_id = 1, message_id
             if reply_to:
                 parent = self._row(reply_to)
+                if parent["retired_at"] is not None:
+                    raise BridgeError("Thread retired after inactivity; start a new thread without reply_to", 410)
                 if parent["status"] not in ("queued", "acknowledged"):
                     raise BridgeError("Replies require an approved parent message", 409)
                 if parent["conversation_id"] != conversation_id:
@@ -350,6 +359,18 @@ class Store:
             if row["source"] != role and not (row["recipient"] == role and row["status"] in ("queued", "acknowledged")):
                 raise BridgeError("Bridge message not found", 404)
             return row
+
+    def retire_threads(self, dry_run=False):
+        from .retirement import retire
+        if type(dry_run) is not bool:
+            raise BridgeError("dry_run must be a boolean")
+        with self.transaction():
+            return retire(self.db, time.time(), THREAD_IDLE_SECONDS, dry_run=dry_run)
+
+    def retirement_usage(self):
+        from .retirement import usage
+        with self.lock:
+            return usage(self.db)
 
     def backup(self):
         if str(self.path) == ":memory:":

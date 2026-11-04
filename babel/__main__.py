@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from .core import AGENTS, BridgeError, Store
 from .mcp import stdio
@@ -18,6 +19,8 @@ def main():
     gateway.add_argument("--container", action="store_true", help="Listen on private Docker network")
     modes.add_parser("wake", help="Run explicitly configured HTTPS notification worker")
     modes.add_parser("backup", help="Online SQLite backup inside configured bridge data/backups")
+    retire = modes.add_parser("retire", help="Retire finished threads inactive for seven days; preserve history")
+    retire.add_argument("--dry-run", action="store_true", help="Preview eligible thread/message counts without retiring")
     from .enrollment import add_parser
     add_parser(modes)
     args = parser.parse_args()
@@ -59,6 +62,12 @@ def main():
                     time.sleep(1)  # Max 60 notification attempts/minute per worker; no autonomous messages.
             except KeyboardInterrupt:
                 pass
+            finally:
+                store.close()
+        elif args.mode == "retire":
+            store = Store()
+            try:
+                print(json.dumps(store.retire_threads(dry_run=args.dry_run)), flush=True)
             finally:
                 store.close()
         elif args.mode == "backup":

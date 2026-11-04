@@ -11,14 +11,14 @@ class MessageCapacityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'bridge.sqlite3'
             store = Store(path)
-            # Historical rows are outside rolling rate windows. Keep mixed states
-            # to cover both undelivered work and acknowledged history.
+            # Pending historical rows are outside rolling rate windows but remain active.
+            # Completed inactive threads are covered by test_retirement.
             def fill(first, last):
                 store.db.executemany('''INSERT INTO messages
                     (id,source,recipient,text,root_id,hops,status,provenance,created)
                     VALUES(?,'ada','grokbot','retained history',?,1,?,'manual',1)''',
                     ((f'history-{i:06d}', f'history-{i:06d}',
-                      'queued' if i % 2 else 'acknowledged') for i in range(first, last)))
+                      'queued') for i in range(first, last)))
                 store.db.commit()
 
             fill(0, 10000)

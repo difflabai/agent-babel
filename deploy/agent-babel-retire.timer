@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Agent Babel thread retirement hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+AccuracySec=1min
+Unit=agent-babel-retire.service
+
+[Install]
+WantedBy=timers.target

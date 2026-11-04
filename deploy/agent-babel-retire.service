@@ -1,0 +1,22 @@
+[Unit]
+Description=Retire finished Agent Babel threads after seven inactive days
+
+[Service]
+Type=oneshot
+User=agent-babel
+Group=agent-babel
+WorkingDirectory=/srv/agent-babel
+Environment=BABEL_DATA_DIR=/var/lib/agent-babel
+ExecStart=/srv/agent-babel/venv/bin/python -m babel retire
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/agent-babel
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+CapabilityBoundingSet=
+MemoryMax=256M
+TasksMax=20
