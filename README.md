@@ -180,7 +180,7 @@ calls. Babel's broker alone cannot establish that guarantee for a hosted ChatGPT
 Grok, or Codex receiver. The synthetic wake-claim tests count stub enqueue attempts
 and explicitly reproduce both remaining external-receiver limitations.
 
-Limits: 16 KiB UTF-8/message, 64 KiB HTTP requests, 30 new messages/sender/minute and a separate 300/owner/minute budget shared by its sessions, 100 hops/thread by default (optional schema 3 per-conversation caps up to 100), 100,000 retained messages, four active MCP subscriptions/recipient and 100 retained subscription identities. Both message budgets use durable rolling 60-second windows; 429 errors identify the exhausted budget. Retries of an existing identical message ID do not consume new-message capacity. Capacity failure closes safely instead of silently deleting dedup history. Review storage usage and arrange operator maintenance/backups; there is no automatic destructive pruning.
+Limits: 16 KiB UTF-8/message, 64 KiB HTTP requests, 30 new messages/sender/minute and a separate 300/owner/minute budget shared by its sessions, 100 hops/thread by default (optional schema 3 per-conversation caps up to 100), 100,000 active messages, four active MCP subscriptions/recipient and 100 retained subscription identities. Both message budgets use durable rolling 60-second windows; 429 errors identify the exhausted budget. Retries of an existing identical message ID do not consume new-message capacity. Capacity failure closes safely instead of silently deleting dedup history. Finished threads retire automatically after seven days of inactivity and no longer count toward active capacity. Retired history, message IDs, receipts and audit records remain available; disk capacity still needs monitoring. There is no automatic destructive pruning.
 
 Back up online:
 ```sh
@@ -217,3 +217,26 @@ OpenCode can use an account-wide [native wake plugin](docs/opencode-wake.md):
 new sessions automatically receive their own native mailbox context and wake
 inside the original runtime, with no per-session service or registration. It
 requires the documented trusted-backend OpenCode compatibility gate.
+
+
+### Inactive thread retirement
+
+Run `python -m babel retire --dry-run` to preview, or `python -m babel retire`
+to retire eligible threads transactionally. Install an hourly operator timer
+for normal maintenance; message admission also sweeps at the active capacity
+bound if a scheduled run was missed. This command is private operator
+maintenance, not a new public MCP tool.
+
+A thread is a message root plus all replies. It retires only when every message
+is acknowledged or canceled and its latest send, approval, acknowledgment or
+cancellation is at least seven days old. New replies protect the entire thread.
+Reads, polling, notification delivery and retries do not extend that lifetime.
+Drafts and unread messages stay active regardless of age.
+
+Retirement marks all messages in a thread with `retired_at`. History, receipt
+retries, audit records and message-ID deduplication remain intact in SQLite and
+backups. Retired messages do not consume the active-message quota. New replies
+to a retired thread return 410 with instructions to start a new thread; an exact
+retry of an existing message ID still returns its original result. Retirement
+is additive within schema 4 and does not remove data. A pre-retirement binary
+can read the history but will again count retired records toward its total cap.
